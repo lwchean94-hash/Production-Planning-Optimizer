@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NGC Scheduler - Inventory Details</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        :root {
+            --primary: #0f172a;
+            --secondary: #2563eb;
+            --secondary-hover: #1d4ed8;
+            --accent: #38bdf8;
+            --surface: #ffffff;
+            --text-main: #1e293b;
+            --text-light: #64748b;
+            --border: #e2e8f0;
+            --danger: #ef4444;
+            --success: #10b981;
+        }
+
+        /* Fixed Background Layer */
+        html::before {
+            content: "";
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-image: url('/background.png?v=1');
+            background-size: cover; 
+            background-position: center; 
+            background-repeat: no-repeat;
+            opacity: 0.8; 
+            z-index: -1; 
+        }
+
+        body {
+            color: var(--text-main);
+            position: relative; 
+            z-index: 1;
+            background: transparent !important; 
+        }
+
+        .nav-glass {
+            background-color: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            border-bottom: 2px solid var(--border);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+        }
+
+        .card-container {
+            background: rgba(255, 255, 255, 0.95); 
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+            border-top: 5px solid var(--secondary);
+            backdrop-filter: blur(5px); 
+            overflow: hidden;
+        }
+
+        .section-header {
+            font-size: 2.8em;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            color: var(--primary);
+            text-shadow: 0 2px 10px rgba(255, 255, 255, 0.8);
+            margin-bottom: 0;
+        }
+
+        .header-subtitle {
+            font-size: 1.2em;
+            color: var(--primary);
+            font-weight: 600;
+            text-shadow: 0 2px 10px rgba(255, 255, 255, 0.8);
+        }
+
+        .input-label {
+            display: block;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: var(--primary);
+            font-size: 0.95em;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            box-sizing: border-box;
+            font-family: inherit;
+            font-size: 14px;
+            transition: all 0.3s ease;
+            background-color: #fcfcfd;
+            outline: none;
+        }
+
+        .form-input:focus {
+            border-color: var(--secondary);
+            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
+            background-color: #ffffff;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--secondary) 0%, var(--secondary-hover) 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(37, 99, 235, 0.4);
+        }
+    </style>
+</head>
+<body class="font-sans antialiased min-h-screen flex flex-col">
+
+    <!-- Navigation -->
+    <nav class="nav-glass sticky top-0 z-50">
+        <div class="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center h-16">
+                <div class="flex items-center">
+                    <img src="Hartalega_Symposium.png" alt="Logo" class="h-8 w-auto mr-3" onerror="this.style.display='none'">
+                    <span class="text-2xl font-black text-slate-900 tracking-tighter">NGC <span style="color: var(--secondary)">Scheduler</span></span>
+                    
+                    <div class="hidden sm:ml-10 sm:flex sm:space-x-4 lg:space-x-6 overflow-x-auto">
+                        <a href="index.html" class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-slate-500 hover:text-slate-700 hover:border-slate-300 whitespace-nowrap">Dashboard</a>
+                        <a href="schedule.html" class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-slate-500 hover:text-slate-700 hover:border-slate-300 whitespace-nowrap">Master Schedule</a>
+                        <a href="settings.html" class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-slate-500 hover:text-slate-700 hover:border-slate-300 whitespace-nowrap">Master Product List</a>
+                        <a href="matrices.html" class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-slate-500 hover:text-slate-700 hover:border-slate-300 whitespace-nowrap">Downtime Matrices</a>
+                        <a href="lines.html" class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-slate-500 hover:text-slate-700 hover:border-slate-300 whitespace-nowrap">Line Settings</a>
+                        <a href="inventory.html" class="inline-flex items-center px-1 pt-1 border-b-2 border-blue-600 text-sm font-bold text-slate-900 whitespace-nowrap">Inventory Stockcount</a>
+                        <a href="about.html" class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-slate-500 hover:text-slate-700 hover:border-slate-300 whitespace-nowrap">About</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 w-full">
+        <div class="mb-10 text-center sm:text-left">
+            <h1 class="section-header">Inventory Stockcount</h1>
+            <p class="header-subtitle mt-2">Correlate master schedule production quantities with existing warehouse stock.</p>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-8">
+            <div class="lg:col-span-3">
+                <div class="card-container p-6">
+                    <h3 class="text-sm font-black text-slate-900 uppercase tracking-widest mb-6 border-b border-slate-100 pb-2">Manual Entry</h3>
+                    <form id="inventoryForm" class="space-y-4">
+                        <div>
+                            <label class="input-label text-xs">Product Identifier</label>
+                            <select id="invProductType" required class="form-input font-mono text-xs">
+                            </select>
+                        </div>
+                        <div>
+                            <label class="input-label text-xs">Size</label>
+                            <select id="invTargetSize" class="form-input text-sm">
+                                <option value="S">Small (S)</option>
+                                <option value="M">Medium (M)</option>
+                                <option value="L">Large (L)</option>
+                                <option value="XL">Extra Large (XL)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="input-label text-xs">Current Stock (pcs)</label>
+                            <input type="number" id="invStock" required min="0" value="0" class="form-input text-sm">
+                        </div>
+                        <button type="submit" class="w-full btn-primary text-sm mt-4">
+                            Update Registry
+                        </button>
+                    </form>
+                </div>
+            </div>
+            
+            <div class="lg:col-span-9">
+                <div class="card-container flex flex-col h-full min-h-[500px]">
+                    <div class="px-6 py-5 border-b border-slate-200 bg-white/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                         <h2 class="text-xs font-bold text-slate-800 uppercase tracking-widest shrink-0">Inventory Projections</h2>
+                         
+                         <div class="flex flex-wrap items-center gap-3">
+                            <div class="flex items-center gap-2">
+                                <span class="text-[10px] font-bold text-slate-500 uppercase">Filter Product:</span>
+                                <select id="filterProduct" onchange="renderInventoryTable()" class="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs font-bold text-slate-700 outline-none">
+                                    <option value="">All Products</option>
+                                </select>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-[10px] font-bold text-slate-500 uppercase">Size:</span>
+                                <select id="filterSize" onchange="renderInventoryTable()" class="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs font-bold text-slate-700 outline-none">
+                                    <option value="">All Sizes</option>
+                                    <option value="S">S</option>
+                                    <option value="M">M</option>
+                                    <option value="L">L</option>
+                                    <option value="XL">XL</option>
+                                </select>
+                            </div>
+                         </div>
+                    </div>
+                    <div class="flex-1 p-0 overflow-auto">
+                        <table class="min-w-full divide-y divide-slate-200 text-sm">
+                            <thead class="bg-slate-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left font-bold text-slate-700 uppercase tracking-tighter text-[11px]">Product Code</th>
+                                    <th class="px-6 py-3 text-center font-bold text-slate-700 uppercase tracking-tighter text-[11px]">Size</th>
+                                    <th class="px-6 py-3 text-right font-bold text-slate-700 uppercase tracking-tighter text-[11px]">Existing Stock</th>
+                                    <th class="px-6 py-3 text-right font-bold text-slate-700 uppercase tracking-tighter text-[11px]">Planned Production</th>
+                                    <th class="px-6 py-3 text-right font-bold text-blue-700 uppercase tracking-tighter text-[11px]">Estimated End Total</th>
+                                </tr>
+                            </thead>
+                            <tbody id="inventoryOutput" class="divide-y divide-slate-200 bg-white">
+                                <!-- Rendered dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="./app.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // Load custom settings dropdowns
+            const prodDropdown = document.getElementById('invProductType');
+            const filterProd = document.getElementById('filterProduct');
+            
+            const populateDropdowns = () => {
+                if (prodDropdown) {
+                    prodDropdown.innerHTML = '';
+                    masterProducts.forEach(product => {
+                        const option = document.createElement('option');
+                        option.value = product;
+                        option.textContent = product;
+                        prodDropdown.appendChild(option);
+                    });
+                }
+                
+                if (filterProd) {
+                    // Keep the "All Products" option
+                    const currentVal = filterProd.value;
+                    filterProd.innerHTML = '<option value="">All Products</option>';
+                    masterProducts.forEach(product => {
+                        const option = document.createElement('option');
+                        option.value = product;
+                        option.textContent = product;
+                        filterProd.appendChild(option);
+                    });
+                    filterProd.value = currentVal;
+                }
+            };
+
+            populateDropdowns();
+            renderInventoryTable();
+
+            const invForm = document.getElementById('inventoryForm');
+            if (invForm) {
+                invForm.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    const prod = document.getElementById('invProductType').value;
+                    const size = document.getElementById('invTargetSize').value;
+                    const stock = parseInt(document.getElementById('invStock').value);
+                    
+                    const key = prod + '|' + size;
+                    // Store inventory in localStorage
+                    let invData = JSON.parse(localStorage.getItem('factoryInventory') || '{}');
+                    invData[key] = stock;
+                    localStorage.setItem('factoryInventory', JSON.stringify(invData));
+                    
+                    showNotification("Stock Updated", "Inventory record has been saved successfully.", "success");
+                    renderInventoryTable();
+                });
+            }
+        });
+
+        function renderInventoryTable() {
+            const tbody = document.getElementById('inventoryOutput');
+            const filterP = document.getElementById('filterProduct')?.value || '';
+            const filterS = document.getElementById('filterSize')?.value || '';
+            
+            if (!tbody) return;
+
+            let invData = JSON.parse(localStorage.getItem('factoryInventory') || '{}');
+            
+            // Calculate planned production from orders
+            let planned = {};
+            orderQueue.forEach(o => {
+                const key = o.product + '|' + o.size;
+                planned[key] = (planned[key] || 0) + o.quantity;
+            });
+
+            // Combine all keys
+            let allKeys = new Set([...Object.keys(invData), ...Object.keys(planned)]);
+            
+            let html = '';
+            let filteredKeys = Array.from(allKeys).filter(key => {
+                const [prod, size] = key.split('|');
+                const matchP = !filterP || prod === filterP;
+                const matchS = !filterS || size === filterS;
+                return matchP && matchS;
+            });
+
+            if (filteredKeys.length === 0) {
+                html = '<tr><td colspan="5" class="py-12 text-center text-slate-400 italic">No inventory or active production orders match the filters.</td></tr>';
+            } else {
+                filteredKeys.sort().forEach(key => {
+                    const [prod, size] = key.split('|');
+                    const stock = invData[key] || 0;
+                    const prodQty = planned[key] || 0;
+                    const total = stock + prodQty;
+                    
+                    html += `
+                    <tr class="hover:bg-slate-50 transition-colors">
+                        <td class="px-6 py-4 border-r border-slate-100 font-mono text-[11px] text-slate-600 font-bold">${prod}</td>
+                        <td class="px-6 py-4 border-r border-slate-100 text-center font-bold text-slate-700">${size}</td>
+                        <td class="px-6 py-4 border-r border-slate-100 text-right text-slate-600 font-mono">${stock.toLocaleString()}</td>
+                        <td class="px-6 py-4 border-r border-slate-100 text-right text-blue-600 font-medium font-mono">${prodQty > 0 ? '+' : ''}${prodQty.toLocaleString()}</td>
+                        <td class="px-6 py-4 text-right font-black text-slate-900 bg-slate-50 border-l border-blue-100 font-mono">${total.toLocaleString()}</td>
+                    </tr>`;
+                });
+            }
+            tbody.innerHTML = html;
+        }
+    </script>
+</body>
+</html>

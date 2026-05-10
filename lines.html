@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Production Line Settings - NGC Scheduler</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
+                    },
+                    colors: {
+                        indigo: {
+                            600: '#2563eb', // Mapped to var(--secondary) so JS switchTab works without edits
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* Base Variables from Technology Wishlist */
+        :root {
+            --primary: #0f172a;
+            --secondary: #2563eb;
+            --secondary-hover: #1d4ed8;
+            --accent: #38bdf8;
+            --surface: #ffffff;
+            --text-main: #1e293b;
+            --text-light: #64748b;
+            --border: #e2e8f0;
+            --danger: #ef4444;
+            --danger-hover: #dc2626;
+            --success: #10b981;
+        }
+
+        /* Fixed Background Layer */
+        html::before {
+            content: "";
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-image: url('/background.png?v=1');
+            background-size: cover; 
+            background-position: center; 
+            background-repeat: no-repeat;
+            opacity: 0.8; 
+            z-index: -1; 
+        }
+
+        body {
+            color: var(--text-main);
+            position: relative; 
+            z-index: 1;
+            /* background-color removed so html::before shows through */
+            background: transparent !important; 
+        }
+
+        /* Glassmorphism Navigation */
+        .nav-glass {
+            background-color: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            border-bottom: 2px solid var(--border);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+        }
+
+        /* Main Headers */
+        .section-header {
+            font-size: 2.8em;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            color: var(--primary);
+            text-shadow: 0 2px 10px rgba(255, 255, 255, 0.8);
+            margin-bottom: 0;
+        }
+
+        .header-subtitle {
+            font-size: 1.2em;
+            color: var(--primary);
+            font-weight: 600;
+            text-shadow: 0 2px 10px rgba(255, 255, 255, 0.8);
+        }
+
+        /* Wishlist-style Cards */
+        .card-container {
+            background: rgba(255, 255, 255, 0.95); 
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+            border-top: 5px solid var(--secondary);
+            backdrop-filter: blur(5px); 
+            overflow: hidden; /* Keeps tab borders inside rounded corners */
+        }
+
+        /* Form Inputs */
+        .input-label {
+            display: block;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: var(--primary);
+            font-size: 1.1em;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 14px;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            box-sizing: border-box;
+            font-family: inherit;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            background-color: #fcfcfd;
+            outline: none;
+            cursor: pointer;
+        }
+        
+        input[type="text"].form-input, input[type="number"].form-input, input[type="datetime-local"].form-input {
+            cursor: text;
+        }
+
+        .form-input:focus {
+            border-color: var(--secondary);
+            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
+            background-color: #ffffff;
+        }
+
+        /* Buttons */
+        .btn-primary {
+            background: linear-gradient(135deg, var(--secondary) 0%, var(--secondary-hover) 100%);
+            color: white;
+            border: none;
+            padding: 14px 28px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 18px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(37, 99, 235, 0.4);
+        }
+
+        .btn-danger {
+            background-color: transparent;
+            color: var(--danger);
+            border: 2px solid var(--danger);
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: 700;
+            font-size: 15px;
+            transition: all 0.2s ease;
+        }
+
+        .btn-danger:hover {
+            background-color: var(--danger);
+            color: white;
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+        }
+
+        /* Table styles inside schedule */
+        #scheduleOutput {
+            background: rgba(255, 255, 255, 0.5);
+        }
+    </style>
+</head>
+<body class="font-sans antialiased min-h-screen flex flex-col">
+
+    <!-- Navigation -->
+    <nav class="nav-glass sticky top-0 z-50">
+        <div class="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center h-16">
+                <div class="flex items-center">
+                    <img src="Hartalega_Symposium.png" alt="Logo" class="h-8 w-auto mr-3" onerror="this.style.display='none'">
+                    <span class="text-2xl font-black text-slate-900 tracking-tighter">NGC <span style="color: var(--secondary)">Scheduler</span></span>
+                    
+                    <div class="hidden sm:ml-10 sm:flex sm:space-x-4 lg:space-x-6 overflow-x-auto">
+                        <a href="index.html" class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-slate-500 hover:text-slate-700 hover:border-slate-300 whitespace-nowrap">Dashboard</a>
+                        <a href="schedule.html" class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-slate-500 hover:text-slate-700 hover:border-slate-300 whitespace-nowrap">Master Schedule</a>
+                        <a href="settings.html" class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-slate-500 hover:text-slate-700 hover:border-slate-300 whitespace-nowrap">Master Product List</a>
+                        <a href="matrices.html" class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-slate-500 hover:text-slate-700 hover:border-slate-300 whitespace-nowrap">Downtime Matrices</a>
+                        <a href="lines.html" class="inline-flex items-center px-1 pt-1 border-b-2 border-blue-600 text-sm font-bold text-slate-900 whitespace-nowrap">Line Settings</a>
+                        <a href="inventory.html" class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-slate-500 hover:text-slate-700 hover:border-slate-300 whitespace-nowrap">Inventory Details</a>
+                        <a href="about.html" class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-slate-500 hover:text-slate-700 hover:border-slate-300 whitespace-nowrap">About</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="flex-1 max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
+        
+        <div class="flex flex-col md:flex-row md:items-center justify-between mb-10 gap-6">
+            <div class="text-center sm:text-left">
+                <h1 class="section-header">Production Line Settings</h1>
+                <p class="header-subtitle mt-2">Fine-tune individual machine capacities (pcs/hour).</p>
+            </div>
+            
+            <div class="flex items-center">
+                <button id="saveAllLineSettings" class="btn-primary">
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg>
+                    Save All Settings
+                </button>
+            </div>
+        </div>
+
+        <div id="linesContainer" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
+            <!-- Populated by JS -->
+        </div>
+    </main>
+
+    <script src="./app.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            renderLineSettings();
+            document.getElementById('saveAllLineSettings').addEventListener('click', saveAllSettings);
+        });
+
+        function renderLineSettings() {
+            const container = document.getElementById('linesContainer');
+            if (!container) return;
+
+            let html = '';
+            Object.keys(PLANTS).forEach(plant => {
+                html += `
+                    <div class="card-container flex flex-col bg-white border-2 border-slate-100">
+                        <div class="px-7 py-5 border-b border-slate-100 bg-slate-50/80">
+                            <h3 class="text-xs font-black text-indigo-900 uppercase tracking-[0.2em] flex items-center">
+                                <span class="w-2 h-2 bg-indigo-500 rounded-full mr-3"></span>
+                                ${plant}
+                            </h3>
+                        </div>
+                        <div class="p-6 space-y-4 flex-1 bg-white">
+                            ${PLANTS[plant].map(line => {
+                                const current = lineSettings[line]?.capacity || 48000;
+                                return `
+                                    <div class="flex items-center justify-between group transition-all duration-200 hover:bg-slate-50 -mx-3 px-3 py-2 rounded-lg gap-2">
+                                        <label class="text-[11px] font-black text-slate-500 uppercase tracking-wider min-w-[60px]">${line}</label>
+                                        <div class="relative flex-1 max-w-[140px]">
+                                            <input type="number" 
+                                                   data-line="${line}" 
+                                                   value="${current}" 
+                                                   class="line-speed-input block w-full pl-4 pr-14 py-2 border-2 border-slate-100 rounded-xl text-sm font-bold text-indigo-900 focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all outline-none bg-slate-50/30 font-mono"
+                                            >
+                                            <span class="absolute right-3 top-3 text-[8px] font-black text-slate-300 uppercase leading-none">Pcs/hr</span>
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
+        }
+
+        function saveAllSettings() {
+            const inputs = document.querySelectorAll('.line-speed-input');
+            const newSettings = { ...lineSettings };
+
+            inputs.forEach(input => {
+                const line = input.getAttribute('data-line');
+                const val = parseInt(input.value) || 48000;
+                newSettings[line] = { capacity: val };
+            });
+
+            lineSettings = newSettings;
+            saveData('lineSettings', lineSettings);
+            showNotification("Settings Saved", "Production capacities have been updated globally.", "success");
+        }
+    </script>
+</body>
+</html>

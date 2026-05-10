@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>About - NGC Scheduler</title>
+    <!-- Tailwind CSS (via CDN for vanilla HTML/JS setup as per previous instructions) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: transparent; }
+        .bg-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-image: url('/background.png?v=1');
+            background-size: cover; 
+            background-position: center; 
+            background-repeat: no-repeat;
+            opacity: 0.8; 
+            z-index: -1; 
+        }
+    </style>
+</head>
+<body class="font-sans antialiased min-h-screen flex flex-col">
+    <div class="bg-overlay"></div>
+    <!-- Navbar -->
+    <nav class="bg-white shadow">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex">
+                    <div class="flex-shrink-0 flex items-center">
+                        <img src="Hartalega_Symposium.png" alt="Logo" class="h-8 w-auto mr-3" onerror="this.style.display='none'">
+                        <span class="text-2xl font-black text-slate-900 tracking-tighter">NGC <span style="color: #6366f1">Scheduler</span></span>
+                    </div>
+                    <div class="hidden sm:ml-10 sm:flex sm:space-x-4 lg:space-x-6 overflow-x-auto">
+                        <a href="index.html" class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-slate-500 hover:text-slate-700 hover:border-slate-300 whitespace-nowrap">Dashboard</a>
+                        <a href="schedule.html" class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-slate-500 hover:text-slate-700 hover:border-slate-300 whitespace-nowrap">Master Schedule</a>
+                        <a href="settings.html" class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-slate-500 hover:text-slate-700 hover:border-slate-300 whitespace-nowrap">Master Product List</a>
+                        <a href="matrices.html" class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-slate-500 hover:text-slate-700 hover:border-slate-300 whitespace-nowrap">Downtime Matrices</a>
+                        <a href="lines.html" class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-slate-500 hover:text-slate-700 hover:border-slate-300 whitespace-nowrap">Line Settings</a>
+                        <a href="inventory.html" class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-slate-500 hover:text-slate-700 hover:border-slate-300 whitespace-nowrap">Inventory Details</a>
+                        <a href="about.html" class="inline-flex items-center px-1 pt-1 border-b-2 border-blue-600 text-sm font-bold text-slate-900 whitespace-nowrap">About</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="flex-1 max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10 w-full">
+        <div class="bg-white shadow rounded-2xl p-8 border border-slate-200">
+            <h1 class="text-3xl font-black text-indigo-900 tracking-tight mb-4">About NGC Scheduler</h1>
+            <p class="text-slate-600 mb-8 text-lg">
+                The NGC Scheduler is a browser-based Production Scheduling Application designed for a continuous glove manufacturing plant. It uses a custom-built Least-Cost Insertion Heuristic to automatically assign factory orders to production lines, minimizing changeover penalties and maximizing throughput.
+            </p>
+
+            <h2 class="text-xl font-bold text-slate-800 border-b pb-2 mb-4">How It Works</h2>
+            <ul class="list-disc pl-5 space-y-2 text-slate-600 mb-8">
+                <li><strong>Production Lines:</strong> The factory has multiple lines across multiple plants. Each line is equipped with exactly 4 physical tiers: Left Bottom (LB), Left Top (LT), Right Bottom (RB), and Right Top (RT).</li>
+                <li><strong>Line Speed:</strong> The application respects maximum limits (e.g. 48,000 pieces/hour) and scales production time proportionally based on how many tiers are running the product.</li>
+                <li><strong>Changeover Penalties:</strong>
+                    <ul class="list-circle pl-5 mt-2 space-y-1">
+                        <li><em>Product Change (Chemical Flush):</em> Changing liquids/chemicals incurs downtime (can be configured in Matrix Settings, default 180 mins).</li>
+                        <li><em>Former Change (Tiers Swap):</em> Swapping sizes involves replacing the hand formers on the line. The downtime is calculated based on how many tiers must be changed.</li>
+                    </ul>
+                </li>
+                <li><strong>Heuristic Algorithm:</strong> The system automatically evaluates incoming orders in real-time, scanning all possible lines and tiers. It determines the insertion point that yields the absolute lowest cost (Setup Downtime + Production Time).</li>
+            </ul>
+
+            <h2 class="text-xl font-bold text-slate-800 border-b pb-2 mb-4">How to Use the App</h2>
+            <div class="space-y-4 text-slate-600 mb-8">
+                <p><strong>Step 1: Dashboard Configuration</strong></p>
+                <p>Use the <a href="index.html" class="text-indigo-600 font-bold hover:underline">Dashboard</a> to enter your incoming orders one by one. You can specify the order number, glove code, size, quantity, and optionally constrain which plant this order should run on.</p>
+                
+                <p><strong>Step 2: Matrix Tuning</strong></p>
+                <p>Optionally, adjust the Changeover Matrices in the left panel of the Dashboard. Here, you define exactly how long it takes to move from one specific glove type to another, or to swap specific tier sets.</p>
+
+                <p><strong>Step 3: Review Master Schedule</strong></p>
+                <p>Switch to the <a href="schedule.html" class="text-indigo-600 font-bold hover:underline">Master Schedule</a> to see the output. The heuristic will seamlessly place your orders.</p>
+                <ul class="list-none space-y-2 pl-4 border-l-4 border-indigo-100 mt-2">
+                    <li>🔹 <strong>Lock:</strong> Pin an order to a specific time and line to preserve its position in future evaluations.</li>
+                    <li>🔹 <strong>Edit (Manual Override):</strong> Click on a scheduled row to manually tweak its tiers, start times, or end times. Doing so will mark the row as "Manual".</li>
+                    <li>🔹 <strong>Export:</strong> Download your generated Master Schedule directly into an Excel-friendly CSV.</li>
+                </ul>
+            </div>
+
+            <div class="bg-indigo-50 border border-indigo-100 rounded-xl p-4">
+                <h3 class="text-sm font-black text-indigo-900 uppercase tracking-widest mb-2">Technical Limitations</h3>
+                <p class="text-xs text-indigo-800 leading-relaxed">
+                    This is a serverless application. All data is securely stored within your browser's <code>localStorage</code>. Clearing your browser data will wipe the queue and matrices unless you have exported them.
+                </p>
+            </div>
+        </div>
+    </main>
+</body>
+</html>

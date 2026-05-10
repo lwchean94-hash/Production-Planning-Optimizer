@@ -1,0 +1,71 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  /* Refined Corporate Palette */
+  --color-indigo-50: #eef4fc;
+  --color-indigo-100: #d9e6f8;
+  --color-indigo-200: #b5d1f1;
+  --color-indigo-300: #85b4e7;
+  --color-indigo-400: #5191d9;
+  --color-indigo-500: #2865AF; /* Primary Blue */
+  --color-indigo-600: #1F4F89; /* Darker Blue */
+  --color-indigo-700: #19406f;
+  --color-indigo-800: #16365a;
+  --color-indigo-900: #0f2744;
+
+  --color-green-50: #ebf7ef;
+  --color-green-100: #d1efdb;
+  --color-green-500: #13A84A; /* Success Green */
+  --color-green-600: #0e853a;
+
+  --color-amber-50: #fef5e9;
+  --color-amber-100: #fde8cc;
+  --color-amber-500: #F7931D; /* Accent Orange */
+  --color-amber-600: #d67b11;
+}
+
+@layer base {
+  body {
+    @apply bg-slate-50 text-slate-900 font-sans antialiased;
+  }
+}
+
+@layer components {
+  .section-header {
+    @apply text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-indigo-900 via-indigo-600 to-indigo-500 border-l-[12px] border-amber-500 pl-6 tracking-tighter mb-2 uppercase drop-shadow-sm;
+  }
+  
+  .card-container {
+    @apply bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-200 overflow-hidden transition-all duration-300;
+  }
+
+  .card-container:hover {
+    @apply shadow-[0_8px_30px_rgb(0,0,0,0.08)] border-slate-300;
+  }
+  
+  .nav-link {
+    @apply border-transparent text-slate-500 hover:text-indigo-600 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-semibold transition-all duration-200 focus:outline-none;
+  }
+  
+  .nav-link-active {
+    @apply border-indigo-600 text-indigo-900 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-bold focus:outline-none;
+  }
+
+  .btn-primary {
+    @apply inline-flex justify-center items-center px-6 py-3 rounded-xl bg-indigo-600 text-white text-sm font-bold shadow-lg shadow-indigo-200 hover:bg-indigo-700 hover:shadow-indigo-300 active:scale-95 transition-all duration-200 uppercase tracking-wider;
+  }
+
+  .btn-secondary {
+    @apply inline-flex justify-center items-center px-6 py-3 rounded-xl bg-white text-slate-700 border border-slate-200 text-sm font-bold shadow-sm hover:bg-slate-50 active:scale-95 transition-all duration-200 uppercase tracking-wider;
+  }
+
+  .input-label {
+    @apply block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-1.5;
+  }
+
+  .form-input {
+    @apply block w-full rounded-xl border-slate-200 bg-slate-50/50 px-4 py-3 text-sm font-medium text-slate-900 shadow-sm transition-all focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none border;
+  }
+}
