@@ -6,6 +6,8 @@
     <title>About - NGC Scheduler</title>
     <!-- Tailwind CSS (via CDN for vanilla HTML/JS setup as per previous instructions) -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10.8.0/dist/mermaid.min.js"></script>
+    <script>mermaid.initialize({ startOnLoad: true, theme: 'base', themeVariables: { primaryColor: '#f1f5f9', primaryBorderColor: '#cbd5e1', lineColor: '#6366f1' } });</script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap');
         body { font-family: 'Inter', sans-serif; background-color: transparent; }
@@ -58,6 +60,23 @@
             </p>
 
             <h2 class="text-xl font-bold text-slate-800 border-b pb-2 mb-4">How It Works</h2>
+            <div class="mb-8 border border-slate-200 rounded-xl p-4 bg-slate-50 flex justify-center overflow-x-auto">
+                <div class="mermaid">
+                    graph TD
+                        A[1. Enter Production Order] --> B{Heuristic Engine Evaluates}
+                        C[Matrix: Product Change Penalty] --> B
+                        D[Matrix: Size Change Penalty] --> B
+                        B --> E[Scan All Available Lines]
+                        E --> F{Find Lowest Cost Insertion}
+                        F --> G[Line 1]
+                        F --> H[Line 2]
+                        G --> I(Assign Tiers LB/LT/RB/RT)
+                        H --> I
+                        I --> J[Master Schedule Updated]
+                        K[User Manually Locks/Edits] --> J
+                </div>
+            </div>
+            
             <ul class="list-disc pl-5 space-y-2 text-slate-600 mb-8">
                 <li><strong>Production Lines:</strong> The factory has multiple lines across multiple plants. Each line is equipped with exactly 4 physical tiers: Left Bottom (LB), Left Top (LT), Right Bottom (RB), and Right Top (RT).</li>
                 <li><strong>Line Speed:</strong> The application respects maximum limits (e.g. 48,000 pieces/hour) and scales production time proportionally based on how many tiers are running the product.</li>
@@ -81,7 +100,8 @@
                 <p><strong>Step 3: Review Master Schedule</strong></p>
                 <p>Switch to the <a href="schedule.html" class="text-indigo-600 font-bold hover:underline">Master Schedule</a> to see the output. The heuristic will seamlessly place your orders.</p>
                 <ul class="list-none space-y-2 pl-4 border-l-4 border-indigo-100 mt-2">
-                    <li>🔹 <strong>Lock:</strong> Pin an order to a specific time and line to preserve its position in future evaluations.</li>
+                    <li>🔹 <strong>Lock:</strong> Pin an order to a specific time and line to preserve its position in future evaluations. Locked items will display with <strong class="text-green-700">green highlights</strong>.</li>
+                    <li>🔹 <strong>Filtering:</strong> Use the "Show: All/Locked/Unlocked" toggle button on the Master Schedule to easily view specific portions of the production plan.</li>
                     <li>🔹 <strong>Edit (Manual Override):</strong> Click on a scheduled row to manually tweak its tiers, start times, or end times. Doing so will mark the row as "Manual".</li>
                     <li>🔹 <strong>Export:</strong> Download your generated Master Schedule directly into an Excel-friendly CSV.</li>
                 </ul>

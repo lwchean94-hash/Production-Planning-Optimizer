@@ -808,7 +808,7 @@ function findBestTierConfiguration(prevState, orderSize, orderQuantity, newProdu
             proposedTiers[tier] = orderSize;
         }
 
-        if (currentTiers[tier] !== proposedTiers[tier]) {
+        if (currentTiers[tier] !== proposedTiers[tier] && currentTiers[tier] !== '?') {
             actuallyChanged.push(tier);
         }
         
@@ -963,10 +963,16 @@ function optimizeScheduleData(rawOrders, rawActivities) {
     const lineTimeTrackers = {}; 
     const lineStates = {};
     
+    // Load initial line states from local storage if available
+    const initialLineStates = JSON.parse(localStorage.getItem('factoryInitialLineStates') || '{}');
+
     allLines.forEach(line => { 
         schedules[line] = []; 
         lineTimeTrackers[line] = 0; 
-        lineStates[line] = null; 
+        lineStates[line] = initialLineStates[line] ? {
+            product: initialLineStates[line].product || null,
+            tiers: initialLineStates[line].tiers || DEFAULT_TIERS_STATE
+        } : null; 
     });
 
     let pendingOrders = [];
@@ -1432,6 +1438,54 @@ function optimizeScheduleData(rawOrders, rawActivities) {
             });
         }
     }
+    // 3. Post-Process to remove obsolete fixed setups
+    allLines.forEach(line => {
+        let currentLineTiers = initialLineStates[line] ? (initialLineStates[line].tiers || DEFAULT_TIERS_STATE) : DEFAULT_TIERS_STATE;
+        let currentLineProduct = initialLineStates[line] ? initialLineStates[line].product : null;
+
+        let toRemove = new Set();
+
+        for (let i = 0; i < schedules[line].length; i++) {
+            let item = schedules[line][i];
+
+            if (item.type === 'activity' && item.isFixed && item.orderId) {
+                let targetOrder = schedules[line].find(o => o.id === item.orderId || (o.combinedOrders && o.combinedOrders.some(sub => sub.id === item.orderId)));
+                if (targetOrder) {
+                    let cost = findBestTierConfiguration({ product: currentLineProduct, tiers: currentLineTiers }, targetOrder.size, targetOrder.quantity, targetOrder.product, line, targetOrder);
+                    
+                    if (cost && cost.setupTime === 0) {
+                        toRemove.add(item.id);
+                    } else if (cost && cost.setupTime > 0) {
+                        let actType = 'SETUP';
+                        let protocolDesc = '';
+                        if (cost.formerPenalty > 0 && cost.productPenalty > 0) {
+                            actType = 'CF + CP';
+                            protocolDesc = `Concurrent: ${cost.formerPenalty}m Former Swap, ${cost.productPenalty}m Chemical Flush`;
+                        } else if (cost.formerPenalty > 0) {
+                            actType = 'CF';
+                            protocolDesc = `Change Former: ${cost.formerPenalty}m Former Swap`;
+                        } else {
+                            actType = 'CP';
+                            protocolDesc = `Change Product: ${cost.productPenalty}m Chemical Flush`;
+                        }
+                        item.activityType = actType;
+                        item.description = protocolDesc;
+                    }
+                }
+            } else if (item.activityType) {
+                // Do nothing
+            } else {
+                let cost = findBestTierConfiguration({ product: currentLineProduct, tiers: currentLineTiers }, item.size, item.quantity, item.product, line, item);
+                if (cost) {
+                    currentLineProduct = item.product;
+                    currentLineTiers = cost.newTiersState;
+                }
+            }
+        }
+
+        schedules[line] = schedules[line].filter(item => !toRemove.has(item.id));
+    });
+
     return schedules;
 }
 
