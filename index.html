@@ -312,6 +312,71 @@
                                     <input type="datetime-local" id="activityEnd" required class="form-input">
                                 </div>
                             </div>
+                            
+                            <div class="border-t border-slate-200 pt-4 mt-2">
+                                <label class="input-label mb-2 text-indigo-700">Post-Activity State (Optional)</label>
+                                <p class="text-[10px] text-slate-500 mb-3 leading-tight">Specify the line's configuration after this activity. Leave Product empty to indicate the line is empty (avoids change product penalty).</p>
+                                
+                                <div class="space-y-3">
+                                    <div>
+                                        <label class="text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1 block">Product</label>
+                                        <select id="activityProduct" class="form-input text-sm">
+                                            <option value="KEEP">-- Keep Current Product --</option>
+                                            <option value="">-- No Product (Empty Line) --</option>
+                                        </select>
+                                    </div>
+                                    <div class="grid grid-cols-4 gap-2">
+                                        <div>
+                                            <label class="text-[10px] font-bold text-slate-600 block mb-1 text-center">LB</label>
+                                            <select id="activityTierLB" class="form-input text-xs px-1 text-center">
+                                                <option value="KEEP">KEEP</option>
+                                                <option value="?">?</option>
+                                                <option value="XS">XS</option>
+                                                <option value="S">S</option>
+                                                <option value="M">M</option>
+                                                <option value="L">L</option>
+                                                <option value="XL">XL</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="text-[10px] font-bold text-slate-600 block mb-1 text-center">LT</label>
+                                            <select id="activityTierLT" class="form-input text-xs px-1 text-center">
+                                                <option value="KEEP">KEEP</option>
+                                                <option value="?">?</option>
+                                                <option value="XS">XS</option>
+                                                <option value="S">S</option>
+                                                <option value="M">M</option>
+                                                <option value="L">L</option>
+                                                <option value="XL">XL</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="text-[10px] font-bold text-slate-600 block mb-1 text-center">RB</label>
+                                            <select id="activityTierRB" class="form-input text-xs px-1 text-center">
+                                                <option value="KEEP">KEEP</option>
+                                                <option value="?">?</option>
+                                                <option value="XS">XS</option>
+                                                <option value="S">S</option>
+                                                <option value="M">M</option>
+                                                <option value="L">L</option>
+                                                <option value="XL">XL</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="text-[10px] font-bold text-slate-600 block mb-1 text-center">RT</label>
+                                            <select id="activityTierRT" class="form-input text-xs px-1 text-center">
+                                                <option value="KEEP">KEEP</option>
+                                                <option value="?">?</option>
+                                                <option value="XS">XS</option>
+                                                <option value="S">S</option>
+                                                <option value="M">M</option>
+                                                <option value="L">L</option>
+                                                <option value="XL">XL</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
 
                             <button type="submit" class="w-full btn-primary" style="background: #0f172a;">
                                 <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>

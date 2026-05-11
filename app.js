@@ -161,6 +161,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- SHARED UI LOGIC ---
     const productDropdown = document.getElementById('productType');
+    const activityProductDropdown = document.getElementById('activityProduct');
     if (productDropdown) {
         productDropdown.innerHTML = ''; // Clear defaults
         masterProducts.forEach(product => {
@@ -168,6 +169,16 @@ document.addEventListener('DOMContentLoaded', () => {
             option.value = product;
             option.textContent = product;
             productDropdown.appendChild(option);
+        });
+    }
+    
+    if (activityProductDropdown) {
+        activityProductDropdown.innerHTML = '<option value="KEEP">-- Keep Current Product --</option><option value="">-- No Product (Empty Line) --</option>';
+        masterProducts.forEach(product => {
+            const option = document.createElement('option');
+            option.value = product;
+            option.textContent = product;
+            activityProductDropdown.appendChild(option);
         });
     }
 
@@ -295,6 +306,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (activityForm) {
         activityForm.addEventListener('submit', function(e) {
             e.preventDefault();
+            const actProduct = document.getElementById('activityProduct').value;
+            const actLB = document.getElementById('activityTierLB').value;
+            const actLT = document.getElementById('activityTierLT').value;
+            const actRB = document.getElementById('activityTierRB').value;
+            const actRT = document.getElementById('activityTierRT').value;
+            
+            let hasTiers = actLB !== 'KEEP' || actLT !== 'KEEP' || actRB !== 'KEEP' || actRT !== 'KEEP';
+
             const newActivity = {
                 id: generateId(),
                 type: 'activity',
@@ -302,7 +321,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 line: document.getElementById('activityLine').value,
                 start: document.getElementById('activityStart').value,
                 end: document.getElementById('activityEnd').value,
-                entryTime: new Date().toISOString()
+                entryTime: new Date().toISOString(),
+                product: actProduct !== 'KEEP' ? (actProduct || null) : undefined,
+                tiers: hasTiers ? { 
+                    LB: actLB !== 'KEEP' ? actLB : undefined,
+                    LT: actLT !== 'KEEP' ? actLT : undefined,
+                    RB: actRB !== 'KEEP' ? actRB : undefined,
+                    RT: actRT !== 'KEEP' ? actRT : undefined
+                } : undefined
             };
             
             activityQueue.push(newActivity);
@@ -841,6 +867,7 @@ function findBestTierConfiguration(prevState, orderSize, orderQuantity, newProdu
     const lineSpeed = lineSettings[lineId]?.capacity || 48000;
     
     let productionTime = 0;
+    let imbalancePenalty = 0;
     
     if (order && order.isCombined) {
         // Find how many tiers each combined order has, and determine max production time
@@ -848,10 +875,23 @@ function findBestTierConfiguration(prevState, orderSize, orderQuantity, newProdu
         
         order.combinedOrders.forEach(o => {
             let oTiers = TIERS.filter(t => proposedTiers[t] === o.size).length;
-            let oRatio = oTiers > 0 ? (oTiers / 4) : (1 / order.combinedOrders.length);
-            let prodTime = (o.quantity / (lineSpeed * oRatio)) * 60;
-            if (prodTime > maxProdTime) maxProdTime = prodTime;
+            let oRatio = oTiers > 0 ? (oTiers / 4) : 0;
+            if (oRatio === 0) {
+                maxProdTime = Infinity;
+            } else {
+                let prodTime = (o.quantity / (lineSpeed * oRatio)) * 60;
+                if (prodTime > maxProdTime) maxProdTime = prodTime;
+            }
         });
+        
+        if (maxProdTime !== Infinity) {
+            order.combinedOrders.forEach(o => {
+                let oTiers = TIERS.filter(t => proposedTiers[t] === o.size).length;
+                let oRatio = oTiers > 0 ? (oTiers / 4) : 1;
+                let prodTime = (o.quantity / (lineSpeed * oRatio)) * 60;
+                imbalancePenalty += (maxProdTime - prodTime);
+            });
+        }
         
         productionTime = maxProdTime;
     } else {
@@ -868,6 +908,7 @@ function findBestTierConfiguration(prevState, orderSize, orderQuantity, newProdu
         setupTime,
         productionTime,
         totalCost,
+        imbalancePenalty,
         changedTiers: actuallyChanged,
         activeCount: activeCount, 
         newTiersState: proposedTiers,
@@ -965,14 +1006,38 @@ function optimizeScheduleData(rawOrders, rawActivities) {
     
     // Load initial line states from local storage if available
     const initialLineStates = JSON.parse(localStorage.getItem('factoryInitialLineStates') || '{}');
+    const schedulingBaseline = new Date(); // Current date as baseline
 
     allLines.forEach(line => { 
         schedules[line] = []; 
         lineTimeTrackers[line] = 0; 
-        lineStates[line] = initialLineStates[line] ? {
-            product: initialLineStates[line].product || null,
-            tiers: initialLineStates[line].tiers || DEFAULT_TIERS_STATE
-        } : null; 
+        
+        let initStateObj = initialLineStates[line];
+        let hasTiers = initStateObj && initStateObj.tiers && Object.values(initStateObj.tiers).some(val => val && val !== '?');
+        if (initStateObj && (initStateObj.product || hasTiers)) {
+            lineStates[line] = {
+                product: initStateObj.product || null,
+                tiers: initStateObj.tiers || DEFAULT_TIERS_STATE
+            };
+            
+            schedules[line].push({
+                id: 'init_' + line,
+                type: 'activity',
+                activityType: 'Initial State',
+                line: line,
+                start: schedulingBaseline.toISOString(),
+                end: schedulingBaseline.toISOString(),
+                startTime: schedulingBaseline.toISOString(),
+                endTime: schedulingBaseline.toISOString(),
+                isFixed: true,
+                isInitialState: true,
+                description: `Product: ${initStateObj.product || 'None'} | Tiers: ${Object.entries(initStateObj.tiers || DEFAULT_TIERS_STATE).map(([t, s]) => t+':'+s).join(', ')}`,
+                product: initStateObj.product || null,
+                tiers: initStateObj.tiers || DEFAULT_TIERS_STATE
+            });
+        } else {
+            lineStates[line] = null; 
+        }
     });
 
     let pendingOrders = [];
@@ -1136,7 +1201,6 @@ function optimizeScheduleData(rawOrders, rawActivities) {
     if (pendingOrders.length === 0 && combinedActivities.length === 0) return schedules;
 
     // 2. Fit Orders around Activities
-    const schedulingBaseline = new Date();
 
     while (pendingOrders.length > 0) {
         let globalBestCandidate = null;
@@ -1249,7 +1313,10 @@ function optimizeScheduleData(rawOrders, rawActivities) {
 
                         let costB = findBestTierConfiguration(lineState, combinedSize, combinedOrder.quantity, combinedOrder.product, lineId, combinedOrder);
                         
-                        if (costB && (!bestCombinedCost || costB.totalCost < bestCombinedCost.totalCost)) {
+                        let scoreB = costB ? costB.totalCost + (costB.imbalancePenalty || 0) * 100 : Infinity;
+                        let bestScore = bestCombinedCost ? bestCombinedCost.totalCost + (bestCombinedCost.imbalancePenalty || 0) * 100 : Infinity;
+
+                        if (costB && scoreB < bestScore) {
                             bestCombinedCost = costB;
                             bestCombinedOrder = combinedOrder;
                         }
@@ -1269,7 +1336,7 @@ function optimizeScheduleData(rawOrders, rawActivities) {
                     let minSequentialCost = Infinity;
 
                     perms.forEach(seq => {
-                        let currentState = { product: lineState?.product, tiers: { ...lineState?.tiers } };
+                        let currentState = lineState ? { product: lineState.product, tiers: { ...lineState.tiers } } : null;
                         let totalCost = 0;
                         seq.forEach(o => {
                             let stepCost = findBestTierConfiguration(currentState, o.size, o.quantity, o.product, lineId, o);
@@ -1283,7 +1350,8 @@ function optimizeScheduleData(rawOrders, rawActivities) {
                         if (totalCost < minSequentialCost) minSequentialCost = totalCost;
                     });
 
-                    if (bestCombinedCost && bestCombinedCost.totalCost <= minSequentialCost) {
+                    let bestCombinedScore = bestCombinedCost ? bestCombinedCost.totalCost + (bestCombinedCost.imbalancePenalty || 0) * 100 : Infinity;
+                    if (bestCombinedCost && bestCombinedScore <= minSequentialCost) {
                         candidates.push({ 
                             type: 'combined', 
                             indices: sub.map(x => x.idx), 
@@ -1330,7 +1398,7 @@ function optimizeScheduleData(rawOrders, rawActivities) {
 
             candidates.forEach(candidate => {
                 const order = candidate.order;
-                const cost = candidate.costDetails;
+                let cost = candidate.costDetails;
                 
                 let proposedStart = new Date(schedulingBaseline.getTime());
                 const lineItems = schedules[lineId] || [];
@@ -1340,6 +1408,27 @@ function optimizeScheduleData(rawOrders, rawActivities) {
                 if (lastProd && lastProd.endTime) {
                     proposedStart = new Date(lastProd.endTime);
                 }
+
+                // 1. Determine effective state right before proposedStart
+                let effectiveState = lineState ? { product: lineState.product, tiers: { ...lineState.tiers } } : null;
+                // Accumulate state from any fixed activities that occur up to or overlap with proposedStart
+                const allFixedSoFar = fixedActs.filter(a => new Date(a.end) <= proposedStart);
+                allFixedSoFar.forEach(act => {
+                    if (act.product !== undefined || (act.tiers && Object.keys(act.tiers).length > 0)) {
+                        effectiveState = { 
+                            product: act.product !== undefined ? act.product : (effectiveState ? effectiveState.product : null), 
+                            tiers: act.tiers ? {
+                                LB: act.tiers.LB !== undefined ? act.tiers.LB : (effectiveState ? effectiveState.tiers.LB : DEFAULT_TIERS_STATE.LB),
+                                LT: act.tiers.LT !== undefined ? act.tiers.LT : (effectiveState ? effectiveState.tiers.LT : DEFAULT_TIERS_STATE.LT),
+                                RB: act.tiers.RB !== undefined ? act.tiers.RB : (effectiveState ? effectiveState.tiers.RB : DEFAULT_TIERS_STATE.RB),
+                                RT: act.tiers.RT !== undefined ? act.tiers.RT : (effectiveState ? effectiveState.tiers.RT : DEFAULT_TIERS_STATE.RT)
+                            } : (effectiveState ? effectiveState.tiers : DEFAULT_TIERS_STATE) 
+                        };
+                    }
+                });
+
+                cost = findBestTierConfiguration(effectiveState, order.size, order.quantity, order.product, lineId, order);
+                if (!cost) return; // If cost is physically impossible
 
                 let conflict = true;
                 while (conflict) {
@@ -1352,6 +1441,21 @@ function optimizeScheduleData(rawOrders, rawActivities) {
                         const actEnd = new Date(act.end);
                         if (proposedStart < actEnd && proposedEnd > actStart) {
                             proposedStart = new Date(actEnd.getTime());
+                            
+                            // If we advance past an activity, adopt its state (if it has one) and recompute cost!
+                            if (act.product !== undefined || (act.tiers && Object.keys(act.tiers).length > 0)) {
+                                effectiveState = { 
+                                    product: act.product !== undefined ? act.product : (effectiveState ? effectiveState.product : null), 
+                                    tiers: act.tiers ? {
+                                        LB: act.tiers.LB !== undefined ? act.tiers.LB : (effectiveState ? effectiveState.tiers.LB : DEFAULT_TIERS_STATE.LB),
+                                        LT: act.tiers.LT !== undefined ? act.tiers.LT : (effectiveState ? effectiveState.tiers.LT : DEFAULT_TIERS_STATE.LT),
+                                        RB: act.tiers.RB !== undefined ? act.tiers.RB : (effectiveState ? effectiveState.tiers.RB : DEFAULT_TIERS_STATE.RB),
+                                        RT: act.tiers.RT !== undefined ? act.tiers.RT : (effectiveState ? effectiveState.tiers.RT : DEFAULT_TIERS_STATE.RT)
+                                    } : (effectiveState ? effectiveState.tiers : DEFAULT_TIERS_STATE) 
+                                };
+                                cost = findBestTierConfiguration(effectiveState, order.size, order.quantity, order.product, lineId, order);
+                            }
+                            
                             conflict = true;
                             break; 
                         }
@@ -1360,8 +1464,10 @@ function optimizeScheduleData(rawOrders, rawActivities) {
 
                 const finishTime = new Date(proposedStart.getTime() + cost.totalCost * 60000);
                 
+                // Add extreme weights to ensure minimum setup times and proper tier utilization
                 let evaluationScore = cost.setupTime * 1000000000; 
                 evaluationScore += finishTime.getTime() / 1000000;
+                evaluationScore += (cost.imbalancePenalty || 0) * 50000;
 
                 if (order.enforceCompletionDate && order.targetCompletionDate) {
                     if (finishTime.getTime() > new Date(order.targetCompletionDate).getTime()) {
@@ -1440,8 +1546,10 @@ function optimizeScheduleData(rawOrders, rawActivities) {
     }
     // 3. Post-Process to remove obsolete fixed setups
     allLines.forEach(line => {
-        let currentLineTiers = initialLineStates[line] ? (initialLineStates[line].tiers || DEFAULT_TIERS_STATE) : DEFAULT_TIERS_STATE;
-        let currentLineProduct = initialLineStates[line] ? initialLineStates[line].product : null;
+        let initStateObj = initialLineStates[line];
+        let hasTiers = initStateObj && initStateObj.tiers && Object.values(initStateObj.tiers).some(val => val && val !== '?');
+        let currentState = (initStateObj && (initStateObj.product || hasTiers)) ? 
+            { product: initStateObj.product || null, tiers: initStateObj.tiers || DEFAULT_TIERS_STATE } : null;
 
         let toRemove = new Set();
 
@@ -1451,7 +1559,7 @@ function optimizeScheduleData(rawOrders, rawActivities) {
             if (item.type === 'activity' && item.isFixed && item.orderId) {
                 let targetOrder = schedules[line].find(o => o.id === item.orderId || (o.combinedOrders && o.combinedOrders.some(sub => sub.id === item.orderId)));
                 if (targetOrder) {
-                    let cost = findBestTierConfiguration({ product: currentLineProduct, tiers: currentLineTiers }, targetOrder.size, targetOrder.quantity, targetOrder.product, line, targetOrder);
+                    let cost = findBestTierConfiguration(currentState, targetOrder.size, targetOrder.quantity, targetOrder.product, line, targetOrder);
                     
                     if (cost && cost.setupTime === 0) {
                         toRemove.add(item.id);
@@ -1473,12 +1581,22 @@ function optimizeScheduleData(rawOrders, rawActivities) {
                     }
                 }
             } else if (item.activityType) {
-                // Do nothing
+                // If the activity specifies post-activity state, update our running state
+                if (item.product !== undefined || (item.tiers && Object.keys(item.tiers).length > 0)) {
+                    currentState = {
+                        product: item.product !== undefined ? item.product : (currentState ? currentState.product : null),
+                        tiers: item.tiers ? {
+                            LB: item.tiers.LB !== undefined ? item.tiers.LB : (currentState ? currentState.tiers.LB : DEFAULT_TIERS_STATE.LB),
+                            LT: item.tiers.LT !== undefined ? item.tiers.LT : (currentState ? currentState.tiers.LT : DEFAULT_TIERS_STATE.LT),
+                            RB: item.tiers.RB !== undefined ? item.tiers.RB : (currentState ? currentState.tiers.RB : DEFAULT_TIERS_STATE.RB),
+                            RT: item.tiers.RT !== undefined ? item.tiers.RT : (currentState ? currentState.tiers.RT : DEFAULT_TIERS_STATE.RT)
+                        } : (currentState ? currentState.tiers : DEFAULT_TIERS_STATE)
+                    };
+                }
             } else {
-                let cost = findBestTierConfiguration({ product: currentLineProduct, tiers: currentLineTiers }, item.size, item.quantity, item.product, line, item);
+                let cost = findBestTierConfiguration(currentState, item.size, item.quantity, item.product, line, item);
                 if (cost) {
-                    currentLineProduct = item.product;
-                    currentLineTiers = cost.newTiersState;
+                    currentState = { product: item.product, tiers: cost.newTiersState };
                 }
             }
         }
@@ -1519,7 +1637,7 @@ window.renderSchedule = function() {
         lineItems.forEach(item => {
             // Logic: Do not show activity such as CF or CP unless it is Non-Production
             const isSetup = item.activityType && ['CF + CP', 'CF', 'CP', 'SETUP'].includes(item.activityType);
-            const isNonProd = item.isFixed && !item.isLockedOrder && !item.isLockedOrderSetup;
+            const isNonProd = item.isFixed && !item.isLockedOrder && !item.isLockedOrderSetup && !item.isInitialState;
             const isOrder = (!item.activityType || item.orderNumber) && !isSetup;
 
             if (isNonProd || isOrder) {
@@ -1574,13 +1692,21 @@ window.renderSchedule = function() {
         const durationMins = Math.round((end - start) / 60000);
         let displayQuantity = item.quantity;
         if (!item.isCombined && (!item.isFixed || item.isLockedOrder)) {
-            // Use the actual quantity instead of calculating from duration
-            // This is what the user expects to see in the order row.
             displayQuantity = item.quantity;
         }
 
         let rowHtml = '';
         if (item.isFixed && !item.isLockedOrder) { // Non-Production Activity
+            let stateDetails = '';
+            if (item.product !== undefined || item.tiers !== undefined) {
+                let p = item.product === null ? 'Empty Line' : (item.product || 'Keep');
+                let t = 'Keep Tiers';
+                if (item.tiers) {
+                    t = `LB:${item.tiers.LB || '?'} LT:${item.tiers.LT || '?'} RB:${item.tiers.RB || '?'} RT:${item.tiers.RT || '?'}`;
+                }
+                stateDetails = `<div><span class="text-[10px] font-bold text-slate-500 uppercase">State override:</span> ${p} | ${t}</div>`;
+            }
+
             rowHtml = `
             <tr class="bg-slate-50">
                 <td class="px-4 py-3 font-bold text-slate-400 font-mono">${noCounter++}</td>
@@ -1591,7 +1717,10 @@ window.renderSchedule = function() {
                 <td class="px-4 py-3 font-bold text-slate-900 border-r border-slate-200">${lineId}</td>
                 <td class="px-4 py-3 text-center font-mono text-slate-500">${formatDate(start)}</td>
                 <td class="px-4 py-3 text-center font-mono text-slate-500">${formatDate(end)}</td>
-                <td class="px-4 py-3 text-slate-400 italic">Maintenance / Non-Production Window</td>
+                <td class="px-4 py-3 text-slate-400 italic">
+                    <div>Maintenance / Non-Production Window</div>
+                    ${stateDetails}
+                </td>
                 <td class="px-4 py-3 text-center">
                     <div class="flex flex-col items-center justify-center gap-2 sm:flex-row">
                         <button onclick="deleteActivity('${item.id}')" class="flex items-center text-red-500 hover:text-red-700 font-bold uppercase text-[10px]">
