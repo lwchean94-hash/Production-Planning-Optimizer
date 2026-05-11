@@ -1,0 +1,39 @@
+We are working in:
+C:\Users\Matt\Downloads\production-planning-optimization
+
+Project: browser-based production planning scheduler for glove manufacturing. Main logic is in app.js, schedule UI in schedule.html, smoke tests in optimizer-smoke-test.cjs.
+
+Current completed work:
+1. Added optimizer-smoke-test.cjs as a Node smoke-test harness.
+2. Implemented “Manual Time Override: Single Boundary Only”.
+3. Manual scheduling now allows either manualStartTime OR manualEndTime, not both.
+4. If manualStartTime is set, optimizer calculates end time from quantity, line speed, and active target tiers.
+5. If manualEndTime is set, optimizer calculates start time from quantity, line speed, and active target tiers.
+6. Line speed means total output across all 4 tiers. Example: 48,000 pcs/hr line speed means 12,000 pcs/hr per tier.
+7. Combined multi-size slots now disable/clear manual time override fields.
+8. CSV export now keeps stored required quantity instead of recalculating quantity from duration.
+9. saveManualAdjustment rejects both start and end being filled, showing “Manual Time Conflict”.
+
+Files changed:
+- app.js
+- schedule.html
+- optimizer-smoke-test.cjs
+
+Latest smoke test result:
+PASS single order on empty factory has no setup and runs for 60 minutes
+PASS product change creates a CP setup
+PASS former change creates a CF setup
+PASS manual start override calculates end from quantity and tiers
+PASS manual end override calculates start from quantity and tiers
+PASS manual tier duration uses total line speed across four tiers
+PASS saveManualAdjustment rejects both start and end overrides
+PASS fixed activity conflict pushes production after activity ends
+PASS manual start avoids a maintenance conflict by choosing another line
+PASS manual end avoids an existing scheduled production conflict
+PASS compatible different-size orders can combine on one line
+
+Run tests with:
+node optimizer-smoke-test.cjs
+
+Important next context:
+We were improving/debugging the optimizer carefully with smoke tests first. The next work should continue by adding small tests before changing optimizer behavior.
