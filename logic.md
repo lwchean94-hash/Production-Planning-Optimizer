@@ -2,7 +2,16 @@
 
 This project is a browser-based production planning scheduler for glove manufacturing. The active scheduling engine lives in `app.js`, mainly in `findBestTierConfiguration()` and `optimizeScheduleData()`. The UI that shows the full line-by-line master schedule lives in `schedule.html`.
 
-The current files on disk are the source of truth for this document. Some behavior described in `handoff.txt` is not present in this copy, especially the smoke test harness and the manual single-boundary time override implementation.
+The current files on disk are the source of truth for this document. Some older behavior described in previous handoff notes is not present in this copy, especially the manual single-boundary time override implementation.
+
+`optimizer-smoke-test.cjs` now exists as a Node smoke-test harness for the current optimizer behavior. The latest verified run is:
+
+```text
+node optimizer-smoke-test.cjs
+9 smoke test(s) passed.
+```
+
+The current smoke coverage checks empty-line duration, CP setup, CF setup, manual tier duration, fixed activity conflict handling, compatible combined orders, target-date priority, delayed CSV status, and specific former matrix overrides.
 
 ## Core Data Model
 
@@ -14,6 +23,8 @@ The app stores operational data in browser `localStorage`:
 - `factoryMatrices`: changeover penalty matrices.
 - `lineSettings`: per-line capacity, defaulting to `48,000 pcs/hour`.
 - `factoryInitialLineStates`: optional starting product and tier state for each line.
+
+`lastGeneratedSchedules` stores the most recent optimized output. Any raw order, activity, or matrix change should invalidate this generated schedule before views are refreshed.
 
 The factory model contains 105 lines split across 9 plants. Each line has 4 physical tiers:
 
@@ -33,6 +44,34 @@ Each production order contains, at minimum:
 - `targetConstraint`, optional plant or line restriction
 - `manualTiers`, optional tier override
 - `isLocked`, optional fixed placement state
+
+## Import And Refresh Flow
+
+Excel upload is handled in `app.js` by `window.handleExcelUpload()`.
+
+The upload flow:
+
+1. Shows the loading overlay with `Uploading Excel...`.
+2. Parses the first worksheet into raw order rows.
+3. Converts valid rows into `factoryOrders` entries.
+4. Saves `factoryOrders`.
+5. Calls `triggerScheduleRefresh()`.
+6. Hides the loading overlay.
+7. Shows success or failure notification.
+
+`triggerScheduleRefresh()` clears generated schedule state:
+
+```text
+window.lastGeneratedSchedules = null
+saveData('lastGeneratedSchedules', null)
+```
+
+It then refreshes whichever views are available:
+
+- dashboard Order Entry via `renderSchedule()`;
+- Master Schedule via `renderFullSchedule()`.
+
+The loading overlay must hide on successful import, empty file, invalid/no-valid-row import, and parse error paths. The file input should be reset after upload processing so the same file can be selected again.
 
 ## Changeover Cost Logic
 
@@ -170,6 +209,27 @@ The high-level flow is:
 7. Insert setup activities before production where setup time is required.
 8. Post-process fixed setup records and remove obsolete setup where no longer needed.
 
+## Dashboard Order Entry View
+
+The dashboard Order Entry table is a raw order registry, not an optimized schedule view.
+
+Dashboard `renderSchedule()` renders from `orderQueue` only. It must not display:
+
+- optimized production rows from `lastGeneratedSchedules`;
+- `CF`, `CP`, `CF + CP`, or `SETUP` setup rows;
+- fixed non-production activities;
+- initial state markers;
+- locked schedule blocks;
+- optimized line/start/end metadata.
+
+The dashboard plant filter is applied only to raw order `targetConstraint` affinity:
+
+- if the selected plant is in the order target constraint, show it;
+- if a constrained line belongs to the selected plant, show it;
+- if an order has no target constraint, show it for all plants.
+
+Raw dashboard actions remain edit, delete, and raw queue CSV export. Optimizer execution belongs on `schedule.html`, not in dashboard Order Entry.
+
 ## Candidate Generation
 
 For each optimization loop, the engine scans every line and builds candidate placements.
@@ -301,7 +361,9 @@ Those behaviors are not implemented in this folder. In this copy, `schedule.html
 
 `exportMasterScheduleToCSV()` exports line, activity/order detail, tiers, start/end, duration, and status.
 
-Current folder behavior recalculates display quantity for non-combined production based on duration, line speed, and active tier ratio:
+Master Schedule UI rendering currently displays stored `item.quantity` for production rows.
+
+Master Schedule CSV export still recalculates display quantity for non-combined production based on duration, line speed, and active tier ratio:
 
 ```text
 displayQuantity = durationHours * lineSpeed * activeRatio
@@ -325,14 +387,38 @@ When this condition is met, `schedule.html` renders a red `Delayed` badge next t
 
 ## Known Risks and Future Work
 
-- Recreate or restore `optimizer-smoke-test.cjs` before changing optimizer logic.
 - Add tests before modifying scheduling behavior.
-- Reconcile `handoff.txt` with the actual working folder.
 - Implement manual single-boundary time overrides.
 - Ensure combined slots clear or disable manual time fields.
 - Preserve stored order quantity in master CSV export.
 - Review greedy combined-order suppression, because it may reject better combinations.
 - Consider extracting optimizer logic from browser globals so it can be tested directly in Node.
+- Improve optimizer performance for 2,000+ uploaded orders.
+
+## Performance Risk For Large Uploads
+
+The current optimizer is correct enough for the covered smoke scenarios, but its structure has scaling risks for large uploaded batches.
+
+Main hotspots:
+
+- Each optimization loop scans every line and the remaining pending orders.
+- Target constraint eligibility is recalculated repeatedly inside line scans.
+- Combined-order generation creates 2-, 3-, and 4-order subsets within product/constraint groups.
+- Combined-order validation evaluates sequential permutations for candidate subsets.
+- Fixed activities are filtered and sorted repeatedly during candidate evaluation.
+- `findBestTierConfiguration()` is recalculated many times for similar line state/order combinations.
+
+For 2,000+ uploaded orders, the next optimization work should be benchmark-first and algorithm-first:
+
+1. Add deterministic benchmark datasets for 100, 500, 1,000, and 2,000+ orders.
+2. Measure total runtime, loop count, candidate count, combination count, and `findBestTierConfiguration()` calls.
+3. Precompute allowed lines per order.
+4. Maintain sorted per-line fixed activity lists.
+5. Cache safe tier-configuration calculations by line state, product, size, quantity, manual tiers, and matrix version.
+6. Reduce repeated combination/permutation work.
+7. Add loop/candidate guardrails so large uploads cannot hang the browser silently.
+
+File splitting can improve maintainability later, but it is not expected to speed up optimization by itself. Because the app must continue to run through `file://`, any future split should use file-compatible classic scripts unless ES modules or Web Workers are explicitly validated under `file://`.
 
 ## Resolved Logic Decisions
 

@@ -1,39 +1,78 @@
 We are working in:
 C:\Users\loh.wei.chean\Desktop\Production Planning Optimization Project
 
-Project: browser-based production planning scheduler for glove manufacturing. Main logic is in app.js, schedule UI in schedule.html, smoke tests in optimizer-smoke-test.cjs.
+Project:
+Browser-based production planning scheduler for glove manufacturing. The active app is static HTML + vanilla JavaScript and should continue to run directly through file:// unless the user explicitly changes that requirement.
+
+Main files:
+- app.js: shared state, Excel import, optimizer, dashboard Order Entry, exports.
+- schedule.html: Master Schedule UI, line schedule rendering, manual adjustment modal, initial state modal.
+- logic.md: primary scheduling logic reference.
+- behaviour.md: future AI behavior and repo-role guidance.
+- optimizer-smoke-test.cjs: Node smoke-test harness for current optimizer behavior.
+
+Current source of truth:
+The files in this folder are the source of truth. Older handoff claims about manual start/end override behavior are not implemented in this folder.
 
 Current completed work:
-1. Added optimizer-smoke-test.cjs as a Node smoke-test harness.
-2. Implemented “Manual Time Override: Single Boundary Only”.
-3. Manual scheduling now allows either manualStartTime OR manualEndTime, not both.
-4. If manualStartTime is set, optimizer calculates end time from quantity, line speed, and active target tiers.
-5. If manualEndTime is set, optimizer calculates start time from quantity, line speed, and active target tiers.
-6. Line speed means total output across all 4 tiers. Example: 48,000 pcs/hr line speed means 12,000 pcs/hr per tier.
-7. Combined multi-size slots now disable/clear manual time override fields.
-8. CSV export now keeps stored required quantity instead of recalculating quantity from duration.
-9. saveManualAdjustment rejects both start and end being filled, showing “Manual Time Conflict”.
+1. Recreated optimizer-smoke-test.cjs as a Node smoke-test harness against app.js with mocked browser/localStorage APIs.
+2. Verified current optimizer smoke tests pass.
+3. Excel upload success/error paths hide the loading overlay and reset the file input where applicable.
+4. Dashboard Order Entry now renders raw factoryOrders only, not optimized schedule rows.
+5. Dashboard plant filter now filters raw orders by targetConstraint plant/line affinity. Unconstrained orders remain visible for all plants.
+6. Dashboard Order Entry optimizer button was removed.
+7. Master Schedule controls were reorganized above the table:
+   - Filter row: Plant, All Months, All Years.
+   - Action row: Export CSV, Run Optimizer, Show: All.
+   - Refresh button removed.
+8. Master Schedule continues to show optimized production rows, setup rows, locks, delayed badges, and CSV delayed status.
 
-Files changed:
-- app.js
-- schedule.html
-- optimizer-smoke-test.cjs
+Latest smoke test command:
+node optimizer-smoke-test.cjs
 
 Latest smoke test result:
+9 smoke test(s) passed.
+
+Passing smoke scenarios:
 PASS single order on empty factory has no setup and runs for 60 minutes
 PASS product change creates a CP setup
 PASS former change creates a CF setup
-PASS manual start override calculates end from quantity and tiers
-PASS manual end override calculates start from quantity and tiers
 PASS manual tier duration uses total line speed across four tiers
-PASS saveManualAdjustment rejects both start and end overrides
 PASS fixed activity conflict pushes production after activity ends
-PASS manual start avoids a maintenance conflict by choosing another line
-PASS manual end avoids an existing scheduled production conflict
 PASS compatible different-size orders can combine on one line
+PASS target completion dates prioritize urgent or late orders
+PASS CSV status includes delayed status when scheduled end misses target date
+PASS specific former matrix overrides changed-tier-count lookup
 
-Run tests with:
-node optimizer-smoke-test.cjs
+Not completed yet:
+1. Manual Time Override: Single Boundary Only is not implemented.
+2. The optimizer does not honor manualStartTime or manualEndTime when calculating placement.
+3. saveManualAdjustment() does not reject both manualStartTime and manualEndTime with Manual Time Conflict.
+4. Combined multi-size slots do not yet clear/disable manual time override fields.
+5. Master Schedule CSV export still recalculates non-combined quantity from duration, line speed, and active tier ratio instead of preserving stored required quantity.
+6. Performance work for very large uploads has not started yet.
+
+Large Order Optimization Next Work:
+Target scale is 2,000+ uploaded orders. Preferred direction is algorithm-first optimization before file splitting or Web Worker work.
+
+Constraints for the performance work:
+- Preserve static HTML + vanilla JS.
+- Preserve file:// operation; do not require a local server.
+- Benchmark before changing optimizer behavior.
+- Add or update smoke/benchmark coverage before making optimizer changes.
+
+Suggested performance plan:
+1. Add deterministic benchmark datasets for 100, 500, 1,000, and 2,000+ orders.
+2. Measure total runtime, loop count, candidate count, combination count, and findBestTierConfiguration() calls.
+3. Keep benchmark reporting separate from pass/fail smoke tests unless the user later agrees to hard runtime thresholds.
+4. Precompute allowed lines per order instead of recalculating target constraints inside every line scan.
+5. Maintain sorted per-line fixed activity lists instead of filtering/sorting repeatedly inside candidate evaluation.
+6. Cache findBestTierConfiguration() results where safe, keyed by line state, product, size, quantity, manual tiers, and matrix version.
+7. Limit combination search by product/constraint/size groups and avoid repeated sequential permutation work.
+8. Add loop/candidate guardrails so large uploads cannot hang the browser silently.
+9. Treat file splitting as a maintainability follow-up:
+   - Later split optimizer, upload/import, UI rendering, and export logic into separate classic scripts if file:// compatible.
+   - Do not move to ES modules or Web Workers until file:// behavior is explicitly validated.
 
 Important next context:
-We were improving/debugging the optimizer carefully with smoke tests first. The next work should continue by adding small tests before changing optimizer behavior.
+Continue making small changes. For optimizer behavior changes, add/update tests first, then implement. For documentation-only UI/layout changes, do not update logic.md unless a major scheduling function, optimizer rule, business rule, or user-visible scheduling behavior changes.

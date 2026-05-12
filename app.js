@@ -27,6 +27,7 @@ function saveData(key, data) {
 let masterProducts = loadData('factoryProducts', ["LATEX", "NITRILE", "VINYL"]);
 let orderQueue = loadData('factoryOrders', []);
 let activityQueue = loadData('factoryActivities', []); // New: Non-production activity storage
+window.lastGeneratedSchedules = loadData('lastGeneratedSchedules', null);
 
 // Load Line Specific Settings (Default 48000 capacity)
 const allLines = Array.from({length: 105}, (_, i) => `Line ${i + 1}`);
@@ -65,6 +66,72 @@ const PLANTS = {
 };
 
 // Safe ID generator (crypto.randomUUID might be undefined in some iframe contexts)
+window.cancelOptimization = false;
+
+window.showLoading = function(message, progressPercentage = null) {
+    let overlay = document.getElementById('globalLoadingOverlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'globalLoadingOverlay';
+        overlay.className = 'fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[9999] flex flex-col items-center justify-center transition-opacity duration-300';
+        overlay.innerHTML = `
+            <div class="bg-white p-8 rounded-2xl shadow-xl flex flex-col items-center max-w-sm w-full mx-4 border border-slate-100 relative">
+                <div class="w-12 h-12 border-4 border-slate-100 border-t-indigo-600 rounded-full animate-spin mb-4"></div>
+                <h3 id="globalLoadingMessage" class="text-lg font-bold text-slate-800 mb-2 text-center">Loading...</h3>
+                <div id="globalLoadingProgressWrap" class="w-full hidden mt-2">
+                    <div class="h-2 bg-slate-100 rounded-full overflow-hidden w-full relative">
+                        <div id="globalLoadingProgressBar" class="absolute top-0 left-0 h-full bg-indigo-600 transition-all duration-300" style="width: 0%"></div>
+                    </div>
+                    <div id="globalLoadingProgressText" class="text-xs text-slate-500 font-medium mt-2 text-center">0%</div>
+                </div>
+                <button onclick="window.emergencyClearData()" class="mt-6 text-xs text-red-500 hover:text-red-700 underline hidden" id="emergencyClearBtn">Taking too long? Click here to stop and clear queue.</button>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+    }
+    
+    // reset optimization flag
+    window.cancelOptimization = false;
+    
+    document.getElementById('globalLoadingMessage').innerHTML = message;
+    
+    const wrap = document.getElementById('globalLoadingProgressWrap');
+    const bar = document.getElementById('globalLoadingProgressBar');
+    const txt = document.getElementById('globalLoadingProgressText');
+    const emergencyBtn = document.getElementById('emergencyClearBtn');
+    
+    if (progressPercentage !== null && progressPercentage >= 0) {
+        wrap.classList.remove('hidden');
+        bar.style.width = `${progressPercentage}%`;
+        txt.textContent = `${Math.round(progressPercentage)}%`;
+        emergencyBtn.classList.remove('hidden');
+    } else {
+        wrap.classList.add('hidden');
+        emergencyBtn.classList.add('hidden');
+    }
+    
+    overlay.classList.remove('hidden');
+    overlay.style.opacity = '1';
+    overlay.style.pointerEvents = 'auto';
+};
+
+window.emergencyClearData = function() {
+    if(confirm("This will stop the current process, delete ALL orders in the queue, and refresh the page. Are you sure?")) {
+        window.cancelOptimization = true;
+        localStorage.removeItem('factoryOrders');
+        window.location.reload();
+    }
+};
+
+window.hideLoading = function() {
+    const overlay = document.getElementById('globalLoadingOverlay');
+    if (overlay) {
+        overlay.style.opacity = '0';
+        overlay.style.pointerEvents = 'none';
+        setTimeout(() => overlay.classList.add('hidden'), 300);
+    }
+};
+
 function generateId() {
     return Date.now().toString(36) + Math.random().toString(36).substr(2);
 }
@@ -334,7 +401,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             activityQueue.push(newActivity);
             saveData('factoryActivities', activityQueue);
-            renderSchedule();
+            triggerScheduleRefresh();
             this.reset();
             showNotification("Activity Blocked", `Timeslot reserved for ${newActivity.activityType} on ${newActivity.line}`, "success");
         });
@@ -411,7 +478,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             saveData('factoryOrders', orderQueue);
-            renderSchedule();
+            triggerScheduleRefresh();
             this.reset();
             
             // Clean up extra rows
@@ -423,6 +490,151 @@ document.addEventListener('DOMContentLoaded', () => {
             document.querySelector('.orderQuantity').value = '500,000'; 
         });
     }
+
+    window.handleExcelUpload = function(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        window.showLoading("Uploading Excel...", -1);
+
+        // Yield to let UI update
+        setTimeout(() => {
+            const reader = new FileReader();
+        reader.onload = async function(e) {
+            try {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, {type: 'array'});
+                const firstSheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[firstSheetName];
+                
+                const json = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+                
+                if (json.length === 0) {
+                    showNotification("Import Error", "Excel file is empty or cannot be parsed.");
+                    window.hideLoading();
+                    event.target.value = '';
+                    return;
+                }
+
+                let importCount = 0;
+                const nowTime = new Date().toISOString();
+                
+                json.forEach(row => {
+                    let getVal = (possibleKeys) => {
+                        for (let k of possibleKeys) {
+                            for (let rk in row) {
+                                if (rk.trim().toLowerCase() === k.toLowerCase()) {
+                                    return row[rk];
+                                }
+                            }
+                        }
+                        return null;
+                    };
+
+                    const orderNumber = getVal(['Sales Order', 'Customer PO NO', 'Order Number', 'Order', 'OrderNo', 'Order No']) || ('Import-' + Math.floor(Math.random() * 10000));
+                    const product = getVal(['Product code', 'Glove code', 'Product', 'Code', 'Product Code', 'Product Identification']);
+                    const size = getVal(['Size Ratio', 'Size', 'Target Size', 'Sizes']);
+                    const quantityRaw = getVal(['Glove Pieces', 'Total In Pieces', 'Quantity', 'Qty', 'Pieces']);
+                    
+                    if (!product || !size || !quantityRaw) return; 
+                    
+                    const quantity = parseInt(String(quantityRaw).replace(/,/g, ''), 10);
+                    if (isNaN(quantity) || quantity <= 0) return;
+
+                    const targetDateRaw = getVal(['Planned Completion date', 'Target Date', 'Target Completion Date', 'Deadline']);
+                    
+                    const enforceTargetRaw = getVal(['Enforce Target', 'Enforce Completion Date', 'Strict Deadline', 'Enforce']);
+                    // Automatically enforce completion date if a planned target is provided in the upload
+                    let enforceCompletionDate = !!targetDateRaw;
+                    if (enforceTargetRaw !== null) {
+                        const strVal = String(enforceTargetRaw).toLowerCase();
+                        enforceCompletionDate = strVal === 'yes' || strVal === 'true' || strVal === '1';
+                    }
+                    
+                    let targetCompletionDate = null;
+                    if (targetDateRaw) {
+                        if (typeof targetDateRaw === 'number') {
+                            let d = new Date((targetDateRaw - (25567 + 2))*86400*1000);
+                            targetCompletionDate = d.toISOString().slice(0,16); 
+                        } else {
+                            let strDate = String(targetDateRaw).trim();
+                            // Look for DD/MM/YYYY or DD-MM-YYYY format specifically
+                            const ukDateMatch = strDate.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+                            if (ukDateMatch) {
+                                let parsed = new Date(`${ukDateMatch[3]}-${ukDateMatch[2].padStart(2, '0')}-${ukDateMatch[1].padStart(2, '0')}T00:00:00`);
+                                if (!isNaN(parsed)) targetCompletionDate = parsed.toISOString().slice(0,16);
+                            } else {
+                                let parsed = new Date(strDate);
+                                if (!isNaN(parsed)) {
+                                    targetCompletionDate = parsed.toISOString().slice(0,16);
+                                }
+                            }
+                        }
+                    }
+
+                    const constraintRaw = getVal(['Target Constraint', 'Target Line Affinity', 'Line Affinity', 'Constraint', 'Target Line']);
+                    let targetConstraint = [];
+                    if (constraintRaw) {
+                        targetConstraint = String(constraintRaw).split(',').map(s => s.trim()).filter(Boolean);
+                    }
+
+                    // Strict product check
+                    let productCode = String(product).trim();
+                    if (productCode && !masterProducts.includes(productCode)) {
+                        masterProducts.push(productCode);
+                        saveData('factoryProducts', masterProducts);
+                        // Update UI dropdowns if they exist
+                        const productDropdown = document.getElementById('productType');
+                        const activityProductDropdown = document.getElementById('activityProduct');
+                        const initialStateProduct = document.getElementById('initialStateProduct');
+                        [productDropdown, activityProductDropdown, initialStateProduct].forEach(dd => {
+                            if (dd) {
+                                const option = document.createElement('option');
+                                option.value = productCode;
+                                option.textContent = productCode;
+                                dd.appendChild(option);
+                            }
+                        });
+                    }
+
+                    const newOrder = {
+                        id: generateId(),
+                        orderNumber: String(orderNumber).trim(),
+                        product: productCode,
+                        size: String(size).trim(),
+                        quantity: quantity,
+                        targetConstraint: targetConstraint,
+                        enforceCompletionDate: enforceCompletionDate,
+                        targetCompletionDate: targetCompletionDate,
+                        entryTime: nowTime
+                    };
+
+                    orderQueue.push(newOrder);
+                    importCount++;
+                });
+
+                if (importCount > 0) {
+                    saveData('factoryOrders', orderQueue);
+                    triggerScheduleRefresh();
+                    window.hideLoading();
+                    showNotification("Import Successful", `Successfully imported ${importCount} order(s) from Excel.`, "success");
+                } else {
+                    window.hideLoading();
+                    showNotification("Import Failed", "No valid rows found. Please ensure 'Product code', 'Size Ratio', and 'Glove Pieces' (or 'Quantity') columns exist.");
+                }
+
+            } catch (error) {
+                console.error(error);
+                window.hideLoading();
+                showNotification("Import Error", "An error occurred while parsing the Excel file.");
+            }
+            
+            event.target.value = '';
+        };
+
+        reader.readAsArrayBuffer(file);
+        }, 50);
+    };
 
     // --- SETTINGS (MASTER DATA) ACTIONS ---
     if (document.getElementById('productListUI')) {
@@ -495,7 +707,7 @@ window.deleteOrder = function(id) {
             
             orderQueue = orderQueue.filter(o => !targetIds.includes(o.id));
             saveData('factoryOrders', orderQueue);
-            renderSchedule();
+            triggerScheduleRefresh();
             showNotification("Order Deleted", "The order has been successfully deleted.");
         }
     );
@@ -558,8 +770,10 @@ function clearData() {
         "Are you sure you want to delete ALL active production orders? This will reset the factory schedule completely.", 
         () => {
             orderQueue = [];
+            activityQueue = [];
             saveData('factoryOrders', []);
-            renderSchedule();
+            saveData('factoryActivities', []);
+            triggerScheduleRefresh();
             showNotification("Data Wiped", "All schedule data has been cleared.");
         }
     );
@@ -702,7 +916,9 @@ function renderMatrices() {
     }
 }
 
-function triggerScheduleRefresh() {
+window.triggerScheduleRefresh = function() {
+    window.lastGeneratedSchedules = null;
+    saveData('lastGeneratedSchedules', null);
     if (typeof window.renderSchedule === 'function') window.renderSchedule();
     if (typeof window.renderFullSchedule === 'function') window.renderFullSchedule();
 }
@@ -920,7 +1136,7 @@ function findBestTierConfiguration(prevState, orderSize, orderQuantity, newProdu
 window.deleteActivity = function(id) {
     activityQueue = activityQueue.filter(a => a.id !== id);
     saveData('factoryActivities', activityQueue);
-    renderSchedule();
+    triggerScheduleRefresh();
 };
 
 window.removeSetup = function(orderId) {
@@ -1043,7 +1259,7 @@ window.toggleLock = function(id, lineId) {
     triggerScheduleRefresh();
 };
 
-function optimizeScheduleData(rawOrders, rawActivities) {
+async function optimizeScheduleData(rawOrders, rawActivities, progressCb) {
     const schedules = {}; 
     const lineTimeTrackers = {}; 
     const lineStates = {};
@@ -1255,7 +1471,22 @@ function optimizeScheduleData(rawOrders, rawActivities) {
 
     // 2. Fit Orders around Activities
 
+    const totalToSchedule = pendingOrders.length;
+    let loops = 0;
+
     while (pendingOrders.length > 0) {
+        if (window.cancelOptimization) {
+            console.warn("Optimization aborted via emergency stop.");
+            break;
+        }
+
+        if (progressCb && loops % 2 === 0) {
+             const done = totalToSchedule - pendingOrders.length;
+             progressCb((done / totalToSchedule) * 100);
+             await new Promise(r => setTimeout(r, 0));
+        }
+        loops++;
+
         let globalBestCandidate = null;
         let globalBestLine = null;
         let globalLowestCostScore = Infinity;
@@ -1715,30 +1946,81 @@ function formatCSVDate(date) {
     return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-window.renderSchedule = function() {
+window.triggerOptimization = function() {
+    showConfirmation(
+        "Run Optimization Engine?", 
+        "This will re-calculate the entire factory schedule using the least-cost heuristic. For large order queues, this process may take several seconds and temporarily lock the browser.", 
+        async () => {
+            if (window.showLoading) window.showLoading("Optimizing Schedule...", 0);
+            
+            // Short delay to let the UI update the loading state
+            setTimeout(async () => {
+                try {
+                    const optimizedSchedules = await optimizeScheduleData(orderQueue, activityQueue, (progress) => {
+                        if (window.showLoading) window.showLoading("Optimizing Schedule...", progress);
+                    });
+                    
+                    window.lastGeneratedSchedules = optimizedSchedules;
+                    saveData('lastGeneratedSchedules', window.lastGeneratedSchedules);
+                    
+                    if (window.hideLoading) window.hideLoading();
+                    
+                    // Refresh current view
+                    if (document.getElementById('scheduleOutput')) renderSchedule();
+                    if (typeof renderFullSchedule === 'function') renderFullSchedule();
+                    
+                    showNotification("Optimization Complete", "The factory schedule has been successfully recalculated.", "success");
+                } catch (err) {
+                    console.error("Optimization Error:", err);
+                    if (window.hideLoading) window.hideLoading();
+                    showNotification("Optimization Failed", "An error occurred during the scheduling process.");
+                }
+            }, 100);
+        }
+    );
+};
+
+window.renderSchedule = async function() {
     const outputDiv = document.getElementById('scheduleOutput');
     const plantSelect = document.getElementById('plantSelect');
     if (!outputDiv || !plantSelect) return; 
 
     if (orderQueue.length === 0 && activityQueue.length === 0) {
         outputDiv.innerHTML = '<div class="text-slate-400 py-12 italic border-2 border-dashed border-slate-200 rounded-lg text-center bg-slate-50 flex flex-col items-center justify-center">No active orders or activities.</div>';
+        if (window.hideLoading) window.hideLoading();
+        return;
+    }
+
+    if (!window.lastGeneratedSchedules) {
+        outputDiv.innerHTML = `
+            <div class="flex flex-col items-center justify-center py-20 px-8 text-center">
+                <div class="bg-indigo-50 p-6 rounded-full mb-6">
+                    <svg class="w-12 h-12 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                </div>
+                <h3 class="text-lg font-bold text-slate-800 mb-2">Schedule Not Optimized</h3>
+                <p class="text-sm text-slate-500 max-w-sm mb-8">New orders have been added or the queue has changed. Please run the optimization engine to generate the best production plan.</p>
+                <button onclick="window.triggerOptimization()" class="btn-primary">
+                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                    Run Heuristic Optimizer
+                </button>
+            </div>
+        `;
         return;
     }
 
     const displayLines = PLANTS[plantSelect.value] || [];
-    const optimizedSchedules = optimizeScheduleData(orderQueue, activityQueue);
-    window.lastGeneratedSchedules = optimizedSchedules;
+    const optimizedSchedules = window.lastGeneratedSchedules;
 
     let allItems = [];
     displayLines.forEach(lineId => {
         const lineItems = optimizedSchedules[lineId] || [];
         lineItems.forEach(item => {
-            // Logic: Do not show activity such as CF or CP unless it is Non-Production
+            // Logic: Include CF/CP setups if the user wants visibility
             const isSetup = item.activityType && ['CF + CP', 'CF', 'CP', 'SETUP'].includes(item.activityType);
             const isNonProd = item.isFixed && !item.isLockedOrder && !item.isLockedOrderSetup && !item.isInitialState;
             const isOrder = (!item.activityType || item.orderNumber) && !isSetup;
 
-            if (isNonProd || isOrder) {
+            if (isNonProd || isOrder || isSetup) {
                 if (item.isCombined && item.combinedOrders) {
                     item.combinedOrders.forEach(subOrder => {
                         allItems.push({ 
@@ -1805,7 +2087,27 @@ window.renderSchedule = function() {
         }
 
         let rowHtml = '';
-        if (item.isFixed && !item.isLockedOrder) { // Non-Production Activity
+        const isSetup = item.activityType && ['CF + CP', 'CF', 'CP', 'SETUP'].includes(item.activityType);
+        
+        if (isSetup) {
+            rowHtml = `
+            <tr class="bg-amber-50/50">
+                <td class="px-4 py-3 font-bold text-slate-400 font-mono">${noCounter++}</td>
+                <td class="px-4 py-3">
+                    <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-600 text-white uppercase tracking-wider">${item.activityType}</span>
+                </td>
+                <td class="px-4 py-3 text-center font-mono text-slate-400">-</td>
+                <td class="px-4 py-3 font-bold text-amber-900 border-r border-slate-200">${lineId}</td>
+                <td class="px-4 py-3 text-center font-mono text-amber-600">${formatDate(start)}</td>
+                <td class="px-4 py-3 text-center font-mono text-amber-600">${formatDate(end)}</td>
+                <td class="px-4 py-3 text-amber-800 text-[10px] italic">
+                    ${item.description || 'Changeover Process'}
+                </td>
+                <td class="px-4 py-3 text-center text-slate-300 italic text-[10px]">
+                    Automatic
+                </td>
+            </tr>`;
+        } else if (item.isFixed && !item.isLockedOrder) { // Non-Production Activity
             let stateDetails = '';
             if (item.product !== undefined || item.tiers !== undefined) {
                 let p = item.product === null ? 'Empty Line' : (item.product || 'Keep');
@@ -1883,6 +2185,101 @@ window.renderSchedule = function() {
 
     tableHtml += `</tbody></table></div>`;
     outputDiv.innerHTML = tableHtml;
+};
+
+// Dashboard Order Entry is intentionally a raw order registry. It must not render
+// optimized schedule rows, CF/CP setup activities, or fixed activity windows.
+window.renderSchedule = async function() {
+    const outputDiv = document.getElementById('scheduleOutput');
+    const plantSelect = document.getElementById('plantSelect');
+    if (!outputDiv || !plantSelect) return;
+
+    if (orderQueue.length === 0) {
+        outputDiv.innerHTML = '<div class="text-slate-400 py-12 italic border-2 border-dashed border-slate-200 rounded-lg text-center bg-slate-50 flex flex-col items-center justify-center">No production orders entered or uploaded.</div>';
+        if (window.hideLoading) window.hideLoading();
+        return;
+    }
+
+    const selectedPlant = plantSelect.value;
+    const selectedPlantLines = PLANTS[selectedPlant] || [];
+    const orderMatchesPlant = (order) => {
+        const constraints = Array.isArray(order.targetConstraint) ? order.targetConstraint : [order.targetConstraint];
+        const cleanConstraints = constraints.filter(Boolean);
+        if (cleanConstraints.length === 0) return true;
+
+        return cleanConstraints.some(constraint => {
+            if (constraint === selectedPlant) return true;
+            if (PLANTS[constraint]) return constraint === selectedPlant;
+            return selectedPlantLines.includes(constraint);
+        });
+    };
+
+    const ordersToDisplay = orderQueue.filter(orderMatchesPlant).sort((a, b) => {
+        const entryA = a.entryTime ? new Date(a.entryTime).getTime() : 0;
+        const entryB = b.entryTime ? new Date(b.entryTime).getTime() : 0;
+        return entryA - entryB;
+    });
+
+    if (ordersToDisplay.length === 0) {
+        outputDiv.innerHTML = '<div class="text-slate-400 py-12 italic border-2 border-dashed border-slate-200 rounded-lg text-center bg-slate-50 flex flex-col items-center justify-center">No production orders match the selected plant filter.</div>';
+        if (window.hideLoading) window.hideLoading();
+        return;
+    }
+
+    let tableHtml = `<div class="overflow-x-auto"><table class="min-w-full divide-y divide-slate-200 text-xs">
+        <thead class="bg-slate-50">
+            <tr>
+                <th class="px-4 py-3 text-left font-bold text-slate-700 uppercase tracking-tighter">No</th>
+                <th class="px-4 py-3 text-left font-bold text-slate-700 uppercase tracking-tighter">Order</th>
+                <th class="px-4 py-3 text-center font-bold text-slate-700 uppercase tracking-tighter">Entry Time</th>
+                <th class="px-4 py-3 text-center font-bold text-slate-700 uppercase tracking-tighter">Size</th>
+                <th class="px-4 py-3 text-right font-bold text-slate-700 uppercase tracking-tighter">Quantity</th>
+                <th class="px-4 py-3 text-left font-bold text-slate-700 uppercase tracking-tighter">Details</th>
+                <th class="px-4 py-3 text-center font-bold text-slate-700 uppercase tracking-tighter">Actions</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-200 bg-white">`;
+
+    let noCounter = 1;
+    ordersToDisplay.forEach(item => {
+        const entry = item.entryTime ? new Date(item.entryTime) : null;
+        const targetValues = Array.isArray(item.targetConstraint) ? item.targetConstraint : [item.targetConstraint];
+        const cleanTargetValues = targetValues.filter(Boolean);
+        const targetDisplay = cleanTargetValues.length > 0 ? cleanTargetValues.join(', ') : 'Any';
+        const targetDateDisplay = item.enforceCompletionDate && item.targetCompletionDate ? formatDate(new Date(item.targetCompletionDate)) : '-';
+
+        tableHtml += `
+            <tr class="hover:bg-indigo-50/30">
+                <td class="px-4 py-3 font-bold text-slate-400 font-mono">${noCounter++}</td>
+                <td class="px-4 py-3">
+                    <div class="font-bold text-slate-900">${item.orderNumber}</div>
+                    <div class="text-[10px] font-mono text-slate-500 truncate max-w-[200px]" title="${item.product}">${item.product}</div>
+                </td>
+                <td class="px-4 py-3 text-center font-mono text-slate-400">${entry ? formatDate(entry) : '-'}</td>
+                <td class="px-4 py-3 text-center font-black text-indigo-900">${item.size}</td>
+                <td class="px-4 py-3 text-right font-mono text-slate-700">${Number(item.quantity || 0).toLocaleString()}</td>
+                <td class="px-4 py-3">
+                    <div><span class="text-[10px] font-bold text-slate-500 uppercase">Target Scope:</span> ${targetDisplay}</div>
+                    <div><span class="text-[10px] font-bold text-slate-500 uppercase">Target Date:</span> ${targetDateDisplay}</div>
+                </td>
+                <td class="px-4 py-3 text-center">
+                    <div class="flex flex-col items-center justify-center gap-2 sm:flex-row">
+                        <button onclick="editOrder('${item.id}')" class="flex items-center text-indigo-600 hover:text-indigo-800 font-bold uppercase text-[10px]">
+                            <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                            Edit
+                        </button>
+                        <button onclick="deleteOrder('${item.id}')" class="flex items-center text-red-500 hover:text-red-700 font-bold uppercase text-[10px]">
+                            <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                            Delete
+                        </button>
+                    </div>
+                </td>
+            </tr>`;
+    });
+
+    tableHtml += `</tbody></table></div>`;
+    outputDiv.innerHTML = tableHtml;
+    if (window.hideLoading) window.hideLoading();
 };
 
 // =========================================================================
