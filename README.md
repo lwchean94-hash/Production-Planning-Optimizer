@@ -6,6 +6,8 @@
 
 The **NGC Scheduler - Production Planning Optimizer** is a high-performance, browser-based Production Scheduling Application designed for a continuous glove manufacturing plant. It uses an advanced **Least-Cost Insertion Heuristic** to automatically assign factory orders to production lines, minimizing changeover penalties and maximizing throughput.
 
+DEMO PAGE: https://lwchean94-hash.github.io/Production-Planning-Optimizer/
+
 ## 🚀 Key Features
 
 *   **Dynamic Combinatorial Heuristic:** Automatically evaluates incoming orders, combining compatible orders (same product, varying sizes) across the 4 physical tiers of a production line.
