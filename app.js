@@ -36,7 +36,8 @@ let lineSettings = loadData('lineSettings', allLines.reduce((acc, line) => {
 }, {}));
 
 // Define default tiers for normalization
-const DEFAULT_TIERS_STATE = { LB: '?', LT: '?', RB: '?', RT: '?' };
+window.DEFAULT_TIERS_STATE = { LB: '?', LT: '?', RB: '?', RT: '?' };
+const DEFAULT_TIERS_STATE = window.DEFAULT_TIERS_STATE;
 
 // Load MATRICES
 let MATRICES = loadData('factoryMatrices', {
@@ -960,6 +961,30 @@ window.toggleLock = function(id, lineId) {
     const isCurrentlyLocked = targetOrders[0].isLocked;
     
     if (isCurrentlyLocked) {
+        if (window.lastGeneratedSchedules && window.lastGeneratedSchedules[lineId]) {
+            let placedData = window.lastGeneratedSchedules[lineId].find(item => item.id === id || (item.combinedOrders && item.combinedOrders.some(sub => sub.id === id)));
+            if (placedData) {
+                const idx = window.lastGeneratedSchedules[lineId].indexOf(placedData);
+                const lockedSuccessors = window.lastGeneratedSchedules[lineId].slice(idx + 1).filter(item => {
+                    if (item.isInitialState || item.activityType) return false;
+                    if (item.isCombined) {
+                        return item.combinedOrders.some(sub => {
+                            const qo = orderQueue.find(o => o.id === sub.id);
+                            return qo && qo.isLocked;
+                        });
+                    } else {
+                        const qo = orderQueue.find(o => o.id === item.id);
+                        return qo && qo.isLocked;
+                    }
+                });
+
+                if (lockedSuccessors.length > 0) {
+                    showNotification("Cannot Unlock", "Please unlock all subsequent locked orders on this line first.", "error");
+                    return;
+                }
+            }
+        }
+
         targetOrders.forEach(order => {
             order.isLocked = false;
             delete order.lockedLine;
@@ -978,6 +1003,25 @@ window.toggleLock = function(id, lineId) {
             let setupData = window.lastGeneratedSchedules[lineId].find(item => item.activityType && (item.orderId === id || (placedData && item.orderId === placedData.id)));
             
             if (placedData) {
+                const idx = window.lastGeneratedSchedules[lineId].indexOf(placedData);
+                const unlockedPredecessors = window.lastGeneratedSchedules[lineId].slice(0, idx).filter(item => {
+                    if (item.isInitialState || item.activityType || item.isFixed) return false;
+                    if (item.isCombined) {
+                        return item.combinedOrders.some(sub => {
+                            const qo = orderQueue.find(o => o.id === sub.id);
+                            return qo && !qo.isLocked;
+                        });
+                    } else {
+                        const qo = orderQueue.find(o => o.id === item.id);
+                        return qo && !qo.isLocked;
+                    }
+                });
+
+                if (unlockedPredecessors.length > 0) {
+                    showNotification("Cannot Lock", "Please lock all preceding orders on this line first.", "error");
+                    return;
+                }
+
                 targetOrders.forEach(order => {
                     order.isLocked = true;
                     order.lockedLine = lineId;
@@ -1181,8 +1225,17 @@ function optimizeScheduleData(rawOrders, rawActivities) {
         // Sort activities by start time for each line
         Object.keys(schedules).forEach(line => {
             schedules[line].sort((a, b) => {
-                if (a.isFixed && b.isFixed) return new Date(a.start) - new Date(b.start);
-                return 0;
+                if (a.isInitialState && b.isInitialState) return 0;
+                if (a.isInitialState) return -1;
+                if (b.isInitialState) return 1;
+                const startA = new Date(a.startTime || a.start).getTime();
+                const startB = new Date(b.startTime || b.start).getTime();
+                const timeDiff = startA - startB;
+                if (timeDiff === 0) {
+                    if (a.isLockedOrderSetup && !b.isLockedOrderSetup) return -1;
+                    if (!a.isLockedOrderSetup && b.isLockedOrderSetup) return 1;
+                }
+                return timeDiff;
             });
             // Prime line states if a locked order explicitly sets product state
             for (let i = schedules[line].length - 1; i >= 0; i--) {
@@ -1410,19 +1463,29 @@ function optimizeScheduleData(rawOrders, rawActivities) {
                 }
 
                 // 1. Determine effective state right before proposedStart
-                let effectiveState = lineState ? { product: lineState.product, tiers: { ...lineState.tiers } } : null;
-                // Accumulate state from any fixed activities that occur up to or overlap with proposedStart
-                const allFixedSoFar = fixedActs.filter(a => new Date(a.end) <= proposedStart);
-                allFixedSoFar.forEach(act => {
-                    if (act.product !== undefined || (act.tiers && Object.keys(act.tiers).length > 0)) {
-                        effectiveState = { 
-                            product: act.product !== undefined ? act.product : (effectiveState ? effectiveState.product : null), 
-                            tiers: act.tiers ? {
-                                LB: act.tiers.LB !== undefined ? act.tiers.LB : (effectiveState ? effectiveState.tiers.LB : DEFAULT_TIERS_STATE.LB),
-                                LT: act.tiers.LT !== undefined ? act.tiers.LT : (effectiveState ? effectiveState.tiers.LT : DEFAULT_TIERS_STATE.LT),
-                                RB: act.tiers.RB !== undefined ? act.tiers.RB : (effectiveState ? effectiveState.tiers.RB : DEFAULT_TIERS_STATE.RB),
-                                RT: act.tiers.RT !== undefined ? act.tiers.RT : (effectiveState ? effectiveState.tiers.RT : DEFAULT_TIERS_STATE.RT)
-                            } : (effectiveState ? effectiveState.tiers : DEFAULT_TIERS_STATE) 
+                let effectiveState = null;
+                const pastItems = lineItems.filter(item => {
+                    const itemEnd = item.isFixed ? new Date(item.end).getTime() : (item.endTime ? item.endTime.getTime() : 0);
+                    return itemEnd <= proposedStart.getTime();
+                }).sort((a,b) => {
+                    const endA = a.isFixed ? new Date(a.end).getTime() : (a.endTime ? a.endTime.getTime() : 0);
+                    const endB = b.isFixed ? new Date(b.end).getTime() : (b.endTime ? b.endTime.getTime() : 0);
+                    return endA - endB;
+                });
+                
+                pastItems.forEach(act => {
+                    if (act.activityType && ['CF + CP', 'CF', 'CP', 'SETUP'].includes(act.activityType)) return;
+                    
+                    const actTiers = act.costDetails?.newTiersState || act.manualTiers || act.tiers;
+                    if (act.product !== undefined || actTiers) {
+                        effectiveState = {
+                            product: act.product !== undefined ? act.product : (effectiveState?.product || null),
+                            tiers: actTiers ? {
+                                LB: actTiers.LB !== undefined ? actTiers.LB : (effectiveState?.tiers?.LB || DEFAULT_TIERS_STATE.LB),
+                                LT: actTiers.LT !== undefined ? actTiers.LT : (effectiveState?.tiers?.LT || DEFAULT_TIERS_STATE.LT),
+                                RB: actTiers.RB !== undefined ? actTiers.RB : (effectiveState?.tiers?.RB || DEFAULT_TIERS_STATE.RB),
+                                RT: actTiers.RT !== undefined ? actTiers.RT : (effectiveState?.tiers?.RT || DEFAULT_TIERS_STATE.RT)
+                            } : (effectiveState?.tiers || DEFAULT_TIERS_STATE)
                         };
                     }
                 });
@@ -1470,9 +1533,24 @@ function optimizeScheduleData(rawOrders, rawActivities) {
                 evaluationScore += (cost.imbalancePenalty || 0) * 50000;
 
                 if (order.enforceCompletionDate && order.targetCompletionDate) {
-                    if (finishTime.getTime() > new Date(order.targetCompletionDate).getTime()) {
-                        evaluationScore += 10000000000000;
+                    const targetTime = new Date(order.targetCompletionDate).getTime();
+                    const slack = targetTime - finishTime.getTime();
+
+                    // Rather than heavily penalizing (which pushes it to the back of the queue), 
+                    // we heavily favor orders that are close to missing their deadline so they get scheduled NOW.
+                    if (slack < 0) {
+                        // Already late or will be late! Must pick immediately to minimize further delay.
+                        evaluationScore -= 10000000000000;
+                    } else if (slack < 3 * 24 * 3600 * 1000) {
+                         // Getting close (less than 3 days slack). High priority.
+                        evaluationScore -= 500000000000;
+                    } else {
+                        // Standard priority for having a target date.
+                        evaluationScore -= 100000000000;
                     }
+
+                    // Break ties by picking the order with the earliest target date
+                    evaluationScore += (targetTime / 100000);
                 }
 
                 if (evaluationScore < globalLowestCostScore) {
@@ -1520,6 +1598,8 @@ function optimizeScheduleData(rawOrders, rawActivities) {
                     line: bestLine,
                     start: finalStartTime.toISOString(),
                     end: setupEnd.toISOString(),
+                    startTime: finalStartTime,
+                    endTime: setupEnd,
                     isFixed: false,
                     costDetails: { setupTime: 0, totalCost: 0 },
                     description: protocolDesc
@@ -1538,10 +1618,21 @@ function optimizeScheduleData(rawOrders, rawActivities) {
             
             // Re-sort line to keep UI consistent (activities + orders in sequence)
             schedules[bestLine].sort((a, b) => {
-                const startA = a.isFixed ? new Date(a.start) : a.startTime;
-                const startB = b.isFixed ? new Date(b.start) : b.startTime;
-                return startA - startB;
+                if (a.isInitialState && b.isInitialState) return 0;
+                if (a.isInitialState) return -1;
+                if (b.isInitialState) return 1;
+                const startA = new Date(a.startTime || a.start).getTime();
+                const startB = new Date(b.startTime || b.start).getTime();
+                const timeDiff = startA - startB;
+                if (timeDiff === 0) {
+                    if (a.isLockedOrderSetup && !b.isLockedOrderSetup) return -1;
+                    if (!a.isLockedOrderSetup && b.isLockedOrderSetup) return 1;
+                }
+                return timeDiff;
             });
+        } else {
+            console.error("Heuristic could not place remaining orders:", pendingOrders);
+            break;
         }
     }
     // 3. Post-Process to remove obsolete fixed setups
@@ -1613,8 +1704,15 @@ function optimizeScheduleData(rawOrders, rawActivities) {
 // =========================================================================
 
 function formatDate(dateObj) {
+    if (!dateObj || isNaN(dateObj.getTime())) return "Invalid Date";
     const pad = (n) => String(n).padStart(2, '0');
     return `${dateObj.getFullYear()}-${pad(dateObj.getMonth()+1)}-${pad(dateObj.getDate())} ${pad(dateObj.getHours())}:${pad(dateObj.getMinutes())}`;
+}
+
+function formatCSVDate(date) {
+    if (!date || isNaN(date.getTime())) return "";
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 window.renderSchedule = function() {
@@ -1695,6 +1793,17 @@ window.renderSchedule = function() {
             displayQuantity = item.quantity;
         }
 
+        let isDelayed = false;
+        let delayStr = "";
+        if (item.enforceCompletionDate && item.targetCompletionDate) {
+            const target = new Date(item.targetCompletionDate);
+            if (end > target) {
+                isDelayed = true;
+                const delayMins = Math.round((end.getTime() - target.getTime()) / 60000);
+                delayStr = delayMins >= 60 ? Math.floor(delayMins/60) + 'h ' + (delayMins%60) + 'm' : Math.max(0, delayMins) + 'm';
+            }
+        }
+
         let rowHtml = '';
         if (item.isFixed && !item.isLockedOrder) { // Non-Production Activity
             let stateDetails = '';
@@ -1747,7 +1856,8 @@ window.renderSchedule = function() {
                 <td class="px-4 py-3 text-center font-mono text-indigo-600">${formatDate(end)}</td>
                 <td class="px-4 py-3">
                     <div class="text-slate-600 font-medium">${displayQuantity.toLocaleString()} pcs (${item.size})</div>
-                    ${item.enforceCompletionDate && item.targetCompletionDate ? `<div class="text-indigo-600 text-[10px] font-bold">Target Date: ${formatDate(new Date(item.targetCompletionDate))}</div>` : ''}
+                    ${item.enforceCompletionDate && item.targetCompletionDate ? '<div class="text-indigo-600 text-[10px] font-bold">Target Date: ' + formatDate(new Date(item.targetCompletionDate)) + '</div>' : ''}
+                    ${isDelayed ? '<div class="mt-1"><span class="inline-flex rounded font-bold bg-red-100 text-red-800 px-1.5 py-0.5 text-[9px] uppercase" title="' + delayStr + ' delayed">Delayed</span></div>' : ''}
                 </td>
                 <td class="px-4 py-3 text-center">
                     <div class="flex flex-col items-center justify-center gap-2 sm:flex-row">
@@ -1755,15 +1865,15 @@ window.renderSchedule = function() {
                             <svg class="w-3 h-3 mr-1" fill="${item.isLocked ? 'currentColor' : 'none'}" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
                             ${item.isLocked ? 'Unlock' : 'Lock'}
                         </button>
-                        ${!item.isLocked ? `
-                        <button onclick="editOrder('${item.id}')" class="flex items-center text-indigo-600 hover:text-indigo-800 font-bold uppercase text-[10px]">
-                            <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
-                            Edit
-                        </button>` : ''}
-                        ${!item.isLocked ? `<button onclick="deleteOrder('${item.id}')" class="flex items-center text-red-500 hover:text-red-700 font-bold uppercase text-[10px]">
-                            <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                            Delete
-                        </button>` : ''}
+                        ${!item.isLocked ? 
+                        '<button onclick="editOrder(\'' + item.id + '\')" class="flex items-center text-indigo-600 hover:text-indigo-800 font-bold uppercase text-[10px]">' +
+                        '<svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>' +
+                        'Edit' +
+                        '</button>' : ''}
+                        ${!item.isLocked ? '<button onclick="deleteOrder(\'' + item.id + '\')" class="flex items-center text-red-500 hover:text-red-700 font-bold uppercase text-[10px]">' +
+                        '<svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>' +
+                        'Delete' +
+                        '</button>' : ''}
                     </div>
                 </td>
             </tr>`;
@@ -1852,6 +1962,14 @@ window.exportMasterScheduleToCSV = function() {
                 
                 jobDetail = `${item.orderNumber || ''} - ${item.product || ''} (${displayQuantity.toLocaleString()} pcs)`;
                 status = (item.isLocked) ? "Locked" : ((item.manualStartTime || item.manualEndTime || item.manualTiers) ? "Manual" : "Automatic");
+                
+                if (item.enforceCompletionDate && item.targetCompletionDate) {
+                    const target = new Date(item.targetCompletionDate);
+                    if (end && end > target) {
+                        status += " (Delayed)";
+                    }
+                }
+
                 lb = tiers.LB || '';
                 lt = tiers.LT || '';
                 rb = tiers.RB || '';
